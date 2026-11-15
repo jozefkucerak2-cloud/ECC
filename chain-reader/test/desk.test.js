@@ -52,6 +52,11 @@ test('start without keys is refused and the page is served', async () => {
     assert.match(html, /Spustiť paper/);
     assert.match(html, /node chain-reader\/src\/serve\.js/);
     assert.match(html, /127\.0\.0\.1:8787/);
+    const engine = await fetch(`http://127.0.0.1:${port}/engine.js`);
+    const script = await engine.text();
+    assert.equal(engine.status, 200);
+    assert.match(script, /createBrowserDesk/);
+    assert.equal(script.includes('sendTransaction'), false);
     const status = await fetch(`http://127.0.0.1:${port}/api/status`);
     const json = await status.json();
     assert.equal(json.running, false);
@@ -198,6 +203,24 @@ test('pause clears the message that asked for a pause', async () => {
   assert.deepEqual(desk.snapshot().keys, [true, false, false]);
 });
 
+test('a Helius address is stored as its key', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const secretPath = path.join(directory, 'rpc.json');
+  const desk = createDesk({
+    env: {},
+    paperPath: path.join(directory, 'paper.json'),
+    secretPath,
+  });
+  const body = desk.connectRpc({
+    key1: `https://mainnet.helius-rpc.com/?api-key=${KEY}`,
+  });
+  assert.deepEqual(body.keys, [true, false, false]);
+  const saved = JSON.parse(fs.readFileSync(secretPath, 'utf8'));
+  assert.equal(saved.keys[0], KEY);
+  assert.equal(JSON.stringify(body).includes(KEY), false);
+  assert.equal(JSON.stringify(saved).includes('mainnet.helius-rpc.com'), false);
+});
+
 test('a private key is refused and a public address is kept', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
   const desk = createDesk({
@@ -310,7 +333,12 @@ test('kill keeps the paper book and does not echo a key', async () => {
   const server = createServer(desk);
   const port = await listen(server);
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/api/kill`, { method: 'POST' });
+    const blocked = await fetch(`http://127.0.0.1:${port}/api/kill`, { method: 'POST' });
+    assert.equal(blocked.status, 403);
+    const response = await fetch(`http://127.0.0.1:${port}/api/kill`, {
+      method: 'POST',
+      headers: { 'x-elite-desk': '1' },
+    });
     const body = await response.json();
     assert.equal(body.decision, 'kill drží pozície');
     assert.equal(body.roles.find((role) => role.id === 'executor').state, 'drží pozície');

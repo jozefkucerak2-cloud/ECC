@@ -6,9 +6,11 @@ const path = require('node:path');
 
 const { loadConfig } = require('./config');
 const { createHeliusPool, watchPool } = require('./helius');
+const { parseHeliusKey } = require('./helius-key');
 const { LIMITS, emptyLedger, haltLedger, loadLedger, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
 
 const DESK_FILE = path.join(__dirname, '..', 'desk', 'index.html');
+const ENGINE_FILE = path.join(__dirname, '..', 'desk', 'engine.js');
 
 const ROLES = Object.freeze([
   { id: 'reader', name: 'Čítač', detail: 'Číta posledných 30 podpisov programu pump a z pohybov zostatkov určí buy alebo sell.' },
@@ -50,7 +52,6 @@ function emptySecrets() {
 
 const PUBLIC_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const PROJECT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const RPC_KEY = /^[A-Za-z0-9_-]{8,64}$/;
 
 function createDesk(options = {}) {
   const env = options.env || process.env;
@@ -381,13 +382,8 @@ function normalizeSecrets(body) {
   const source = body && typeof body === 'object' ? body : {};
   const keys = [1, 2, 3].map((index) => cleanField(source[`key${index}`]));
   const projects = [1, 2, 3].map((index) => cleanField(source[`project${index}`]));
-  for (const key of keys) {
-    if (key && !RPC_KEY.test(key)) {
-      const error = new Error('Kľúč má zlý tvar. Súkromný kľúč peňaženky sa neprijíma.');
-      error.statusCode = 400;
-      throw error;
-    }
-  }
+  const parsed = keys.map((key) => parseHeliusKey(key));
+  keys.splice(0, keys.length, ...parsed);
   for (const project of projects) {
     if (project && !PROJECT_UUID.test(project)) {
       const error = new Error('ID projektu má byť UUID.');
@@ -479,33 +475,47 @@ function createServer(desk) {
         response.end(html);
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/engine.js') {
+        const script = fs.readFileSync(ENGINE_FILE);
+        response.writeHead(200, {
+          'content-type': 'text/javascript; charset=utf-8',
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        });
+        response.end(script);
+        return;
+      }
       if (request.method === 'GET' && url.pathname === '/api/status') {
         sendJson(response, 200, desk.snapshot());
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/start') {
+        assertDesk(request);
         sendJson(response, 200, await desk.start());
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/stop') {
+        assertDesk(request);
         sendJson(response, 200, await desk.halt());
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/kill') {
+        assertDesk(request);
         sendJson(response, 200, desk.kill());
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/release') {
+        assertDesk(request);
         sendJson(response, 200, desk.release());
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/rpc') {
-        assertLocal(request);
+        assertDesk(request);
         sendJson(response, 200, desk.connectRpc(await readBody(request)));
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/wallet') {
-        assertLocal(request);
+        assertDesk(request);
         sendJson(response, 200, desk.connectWallet(await readBody(request)));
         return;
       }
@@ -517,19 +527,23 @@ function createServer(desk) {
   });
 }
 
-function assertLocal(request) {
+function assertDesk(request) {
   const origin = request.headers.origin;
-  if (!origin) {
-    return;
+  if (origin) {
+    let hostname = '';
+    try {
+      hostname = new URL(origin).hostname;
+    } catch {
+      hostname = '';
+    }
+    if (hostname !== '127.0.0.1' && hostname !== 'localhost') {
+      const error = new Error('RPC a peňaženka sa pripájajú len na lokálnom procese.');
+      error.statusCode = 403;
+      throw error;
+    }
   }
-  let hostname = '';
-  try {
-    hostname = new URL(origin).hostname;
-  } catch {
-    hostname = '';
-  }
-  if (hostname !== '127.0.0.1' && hostname !== 'localhost') {
-    const error = new Error('RPC a peňaženka sa pripájajú len na lokálnom procese.');
+  if (request.headers['x-elite-desk'] !== '1') {
+    const error = new Error('požiadavka nemá hlavičku tohto pultu');
     error.statusCode = 403;
     throw error;
   }
