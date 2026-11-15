@@ -60,7 +60,7 @@ async function callOnce(config, fetchImpl, method, params) {
       signal: AbortSignal.timeout(config.timeoutMs),
     });
   } catch (error) {
-    throw new RpcError(`rpc transport failed: ${error.message}`, 'retry', { method });
+    throw new RpcError(`rpc transport failed: ${redact(error.message)}`, 'retry', { method });
   }
 
   if (response.status === 429 || response.status >= 500) {
@@ -82,12 +82,16 @@ async function callOnce(config, fetchImpl, method, params) {
   if (body.error) {
     const code = body.error.code;
     const category = code === 429 ? 'retry' : 'alert';
-    throw new RpcError(body.error.message || 'rpc error', category, { method, code });
+    throw new RpcError(redact(body.error.message || 'rpc error'), category, { method, code });
   }
   if (!Object.prototype.hasOwnProperty.call(body, 'result')) {
     throw new RpcError('rpc response missing result', 'alert', { method });
   }
   return body.result;
+}
+
+function redact(value) {
+  return String(value).replace(/api-key=[^&\s'"]+/gi, 'api-key=redacted');
 }
 
 function sleep(ms) {
@@ -103,4 +107,5 @@ module.exports = {
   ALLOWED_METHODS,
   RpcError,
   createRpcClient,
+  redact,
 };
