@@ -44,11 +44,21 @@ function projectPresence(env) {
   return [1, 2, 3].map((index) => present(env[`HELIUS_PROJECT_ID_${index}`]));
 }
 
+function emptySecrets() {
+  return { keys: ['', '', ''], projects: ['', '', ''], wallet: null };
+}
+
+const PUBLIC_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const PROJECT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RPC_KEY = /^[A-Za-z0-9_-]{8,64}$/;
+
 function createDesk(options = {}) {
   const env = options.env || process.env;
   const createPool = options.createPool || createHeliusPool;
   const watch = options.watch || watchPool;
   const paperFile = options.paperPath || path.join(__dirname, '..', 'data', 'paper-ledger.json');
+  const secretFile = options.secretPath || null;
+  const loaded = secretFile ? readSecrets(secretFile) : emptySecrets();
   const state = {
     running: false,
     last: null,
@@ -59,25 +69,45 @@ function createDesk(options = {}) {
     controller: null,
     loop: null,
     token: null,
+    secrets: loaded,
+    wallet: loaded.wallet,
   };
 
+  function runtimeEnv() {
+    const next = { ...env };
+    for (let index = 1; index <= 3; index += 1) {
+      const keyName = `HELIUS_API_KEY_${index}`;
+      const projectName = `HELIUS_PROJECT_ID_${index}`;
+      if (!present(next[keyName]) && state.secrets.keys[index - 1]) {
+        next[keyName] = state.secrets.keys[index - 1];
+      }
+      if (!present(next[projectName]) && state.secrets.projects[index - 1]) {
+        next[projectName] = state.secrets.projects[index - 1];
+      }
+    }
+    return next;
+  }
+
   function snapshot() {
+    const current = runtimeEnv();
     return {
       mode: 'paper',
       running: state.running,
-      keys: keyPresence(env),
-      projectIds: projectPresence(env),
+      keys: keyPresence(current),
+      projectIds: projectPresence(current),
+      wallet: state.wallet,
+      endpoint: 'mainnet.helius-rpc.com',
       last: state.last,
       decision: state.decision,
       halted: state.halted,
       error: state.error,
       limits: LIMITS,
-      config: publicConfig(env),
+      config: publicConfig(current),
       book: bookOf(paperFile),
       roles: ROLES.map((role) => ({
         ...role,
-        state: roleState(role.id, state.running, state.halted),
-        detail: eventNote(state.events, role.id) || role.detail,
+        state: roleState(role.id, state.running, state.halted, state.wallet),
+        detail: walletDetail(role, state.wallet) || eventNote(state.events, role.id) || role.detail,
       })),
     };
   }
@@ -92,8 +122,9 @@ function createDesk(options = {}) {
     if (state.running) {
       return snapshot();
     }
-    if (!keyPresence(env).some(Boolean)) {
-      state.error = 'Helius kľúče nie sú v prostredí tohto procesu';
+    const current = runtimeEnv();
+    if (!keyPresence(current).some(Boolean)) {
+      state.error = 'RPC nie je pripojené. Vlož Helius kľúč vľavo.';
       const error = new Error(state.error);
       error.statusCode = 409;
       throw error;
@@ -101,8 +132,8 @@ function createDesk(options = {}) {
     let config;
     let pool;
     try {
-      config = loadConfig(env);
-      pool = createPool(env, {
+      config = loadConfig(current);
+      pool = createPool(current, {
         usagePath: env.HELIUS_USAGE_PATH || path.join(__dirname, '..', 'data', 'helius-usage.json'),
         signatureLimit: config.signatureLimit,
         minCleanSample: config.minCleanSample,
@@ -113,7 +144,7 @@ function createDesk(options = {}) {
       });
     } catch (error) {
       state.running = false;
-      state.error = publicError(error, env);
+      state.error = publicError(error, current);
       const wrapped = new Error(state.error);
       wrapped.statusCode = error.statusCode || (error.name === 'ConfigError' ? 400 : 500);
       throw wrapped;
@@ -141,7 +172,7 @@ function createDesk(options = {}) {
       if (state.token !== token) {
         return;
       }
-      state.error = publicError(error, env);
+      state.error = publicError(error, current);
     }).finally(() => {
       if (state.token !== token) {
         return;
@@ -176,7 +207,51 @@ function createDesk(options = {}) {
     return snapshot();
   }
 
-  return { snapshot, start, halt, kill };
+  function connectRpc(body) {
+    if (state.running) {
+      state.error = 'Najprv pauza, potom výmena RPC.';
+      const error = new Error(state.error);
+      error.statusCode = 409;
+      throw error;
+    }
+    let next;
+    try {
+      next = normalizeSecrets(body);
+    } catch (error) {
+      state.error = error.message;
+      throw error;
+    }
+    next.wallet = state.wallet;
+    state.secrets = next;
+    if (secretFile) {
+      writeSecrets(secretFile, next);
+    }
+    state.error = null;
+    return snapshot();
+  }
+
+  function connectWallet(body) {
+    if (body && body.disconnect) {
+      state.wallet = null;
+    } else {
+      const address = String(body && body.address || '').trim();
+      if (!PUBLIC_ADDRESS.test(address)) {
+        state.error = 'Povolená je len verejná adresa. Súkromný kľúč sa neprijíma.';
+        const error = new Error(state.error);
+        error.statusCode = 400;
+        throw error;
+      }
+      state.wallet = address;
+    }
+    state.secrets = { ...state.secrets, wallet: state.wallet };
+    if (secretFile) {
+      writeSecrets(secretFile, state.secrets);
+    }
+    state.error = null;
+    return snapshot();
+  }
+
+  return { snapshot, start, halt, kill, connectRpc, connectWallet };
 }
 
 function readPaper(file) {
@@ -264,9 +339,79 @@ function shortId(value) {
   return `${text.slice(0, 4)}…${text.slice(-4)}`;
 }
 
-function roleState(id, running, halted) {
+function normalizeSecrets(body) {
+  const source = body && typeof body === 'object' ? body : {};
+  const keys = [1, 2, 3].map((index) => cleanField(source[`key${index}`]));
+  const projects = [1, 2, 3].map((index) => cleanField(source[`project${index}`]));
+  if (!keys.some(Boolean)) {
+    const error = new Error('Chýba aspoň jeden Helius kľúč.');
+    error.statusCode = 400;
+    throw error;
+  }
+  for (const key of keys) {
+    if (key && !RPC_KEY.test(key)) {
+      const error = new Error('Kľúč má zlý tvar. Súkromný kľúč peňaženky sa neprijíma.');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+  for (const project of projects) {
+    if (project && !PROJECT_UUID.test(project)) {
+      const error = new Error('ID projektu má byť UUID.');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+  return { keys, projects, wallet: null };
+}
+
+function cleanField(value) {
+  return String(value || '').trim();
+}
+
+function readSecrets(file) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const secrets = emptySecrets();
+    if (Array.isArray(parsed.keys)) {
+      secrets.keys = [0, 1, 2].map((index) => cleanField(parsed.keys[index]));
+    }
+    if (Array.isArray(parsed.projects)) {
+      secrets.projects = [0, 1, 2].map((index) => cleanField(parsed.projects[index]));
+    }
+    secrets.wallet = PUBLIC_ADDRESS.test(String(parsed.wallet || '')) ? String(parsed.wallet) : null;
+    return secrets;
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return emptySecrets();
+    }
+    return emptySecrets();
+  }
+}
+
+function writeSecrets(file, secrets) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.tmp`;
+  const body = JSON.stringify({
+    version: 1,
+    keys: secrets.keys,
+    projects: secrets.projects,
+    wallet: secrets.wallet,
+  });
+  fs.writeFileSync(temporary, body, { mode: 0o600 });
+  fs.renameSync(temporary, file);
+}
+
+function walletDetail(role, wallet) {
+  if (role.id !== 'wallet' || !wallet) {
+    return '';
+  }
+  return `${shortId(wallet)} · verejná adresa, súkromný kľúč sa neukladá`;
+}
+
+function roleState(id, running, halted, wallet) {
   if (id === 'wallet') {
-    return 'nepripojená';
+    return wallet ? 'pripojená' : 'nepripojená';
   }
   if (halted && id === 'executor') {
     return 'drží pozície';
@@ -317,11 +462,67 @@ function createServer(desk) {
         sendJson(response, 200, desk.kill());
         return;
       }
+      if (request.method === 'POST' && url.pathname === '/api/rpc') {
+        assertLocal(request);
+        sendJson(response, 200, desk.connectRpc(await readBody(request)));
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/api/wallet') {
+        assertLocal(request);
+        sendJson(response, 200, desk.connectWallet(await readBody(request)));
+        return;
+      }
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       response.end('nenájdené');
     } catch (error) {
       sendJson(response, error.statusCode || 500, { error: error.message || 'chyba' });
     }
+  });
+}
+
+function assertLocal(request) {
+  const origin = request.headers.origin;
+  if (!origin) {
+    return;
+  }
+  let hostname = '';
+  try {
+    hostname = new URL(origin).hostname;
+  } catch {
+    hostname = '';
+  }
+  if (hostname !== '127.0.0.1' && hostname !== 'localhost') {
+    const error = new Error('RPC a peňaženka sa pripájajú len na lokálnom procese.');
+    error.statusCode = 403;
+    throw error;
+  }
+}
+
+function readBody(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > 8192) {
+        const error = new Error('požiadavka je príliš veľká');
+        error.statusCode = 413;
+        reject(error);
+        request.destroy();
+      } else {
+        chunks.push(chunk);
+      }
+    });
+    request.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
+      } catch {
+        const error = new Error('JSON nie je platný');
+        error.statusCode = 400;
+        reject(error);
+      }
+    });
+    request.on('error', reject);
   });
 }
 
@@ -335,7 +536,9 @@ function sendJson(response, status, body) {
 
 function main() {
   const port = Number(process.env.ELITE_DESK_PORT || 8787);
-  const server = createServer(createDesk());
+  const server = createServer(createDesk({
+    secretPath: path.join(__dirname, '..', 'data', 'rpc-session.json'),
+  }));
   server.listen(port, '127.0.0.1', () => {
     process.stdout.write(`elite desk http://127.0.0.1:${port}\n`);
   });

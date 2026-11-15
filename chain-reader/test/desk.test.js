@@ -40,7 +40,7 @@ test('start without keys is refused and the page is served', async () => {
     paperPath: path.join(directory, 'paper.json'),
   });
   await assert.rejects(() => desk.start(), (error) => error.statusCode === 409);
-  assert.match(desk.snapshot().error, /kľúče/);
+  assert.match(desk.snapshot().error, /kľúč/);
   const server = createServer(desk);
   const port = await listen(server);
   try {
@@ -121,6 +121,50 @@ test('a second start waits until the first loop has stopped', async () => {
   assert.equal(active, 1);
   await desk.halt();
   assert.equal(active, 0);
+});
+
+test('an rpc key is stored locally and is absent from the status', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const secretPath = path.join(directory, 'rpc.json');
+  const desk = createDesk({
+    env: { ELITE_SOLANA_RPC_URL: 'https://rpc.example' },
+    paperPath: path.join(directory, 'paper.json'),
+    secretPath,
+  });
+  const project = '11111111-1111-4111-8111-111111111111';
+  const body = desk.connectRpc({ key1: KEY, project1: project });
+  assert.equal(JSON.stringify(body).includes(KEY), false);
+  assert.deepEqual(body.keys, [true, false, false]);
+  assert.deepEqual(body.projectIds, [true, false, false]);
+  const saved = JSON.parse(fs.readFileSync(secretPath, 'utf8'));
+  assert.equal(saved.keys[0], KEY);
+  const server = createServer(desk);
+  const port = await listen(server);
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/status`);
+    const status = await response.json();
+    assert.equal(JSON.stringify(status).includes(KEY), false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('a private key is refused and a public address is kept', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const desk = createDesk({
+    env: {},
+    paperPath: path.join(directory, 'paper.json'),
+    secretPath: path.join(directory, 'rpc.json'),
+  });
+  const secret = '5'.repeat(88);
+  await assert.rejects(() => Promise.resolve().then(() => desk.connectRpc({ key1: secret })), (error) => error.statusCode === 400);
+  await assert.rejects(() => Promise.resolve().then(() => desk.connectWallet({ address: secret })), (error) => error.statusCode === 400);
+  assert.match(desk.snapshot().error, /verejná adresa/);
+  const address = 'So11111111111111111111111111111111111111112';
+  const body = desk.connectWallet({ address });
+  assert.equal(body.wallet, address);
+  assert.equal(body.roles.find((role) => role.id === 'wallet').state, 'pripojená');
+  assert.equal(JSON.stringify(body).includes(secret), false);
 });
 
 test('kill keeps the paper book and does not echo a key', async () => {
