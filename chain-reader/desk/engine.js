@@ -623,7 +623,7 @@ var EliteEngine = (() => {
         const onUpdate = options.onUpdate || (() => {
         });
         const auto = options.auto !== false;
-        const usable = options.usableCredits || USABLE_CREDITS;
+        const usable = options.usableCredits ?? USABLE_CREDITS;
         let keys = ["", "", ""];
         let projects = ["", "", ""];
         let wallet = null;
@@ -778,7 +778,7 @@ var EliteEngine = (() => {
             }
             try {
               const next = await tick(token);
-              if (next && token === generation && running) {
+              if (next && token === generation) {
                 onUpdate(next);
               }
             } catch (caught) {

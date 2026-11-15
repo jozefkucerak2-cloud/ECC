@@ -28,7 +28,7 @@ function createBrowserDesk(options = {}) {
   const storage = options.storage || null;
   const onUpdate = options.onUpdate || (() => {});
   const auto = options.auto !== false;
-  const usable = options.usableCredits || USABLE_CREDITS;
+  const usable = options.usableCredits ?? USABLE_CREDITS;
   let keys = ['', '', ''];
   let projects = ['', '', ''];
   let wallet = null;
@@ -195,7 +195,7 @@ function createBrowserDesk(options = {}) {
       }
       try {
         const next = await tick(token);
-        if (next && token === generation && running) {
+        if (next && token === generation) {
           onUpdate(next);
         }
       } catch (caught) {

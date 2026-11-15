@@ -73,6 +73,27 @@ test('an exhausted key leaves the next key running', async () => {
   assert.equal(stopped.running, false);
 });
 
+test('a full month reaches the page and releases start', async () => {
+  const updates = [];
+  const desk = createBrowserDesk({
+    auto: true,
+    usableCredits: 30,
+    onUpdate(snapshot) {
+      updates.push({ running: snapshot.running, error: snapshot.error });
+    },
+    fetch: async () => {
+      throw new Error('rpc by sa nemal volať');
+    },
+  });
+  desk.connectRpc({ key1: KEY });
+  desk.start();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.deepEqual(updates.at(-1), {
+    running: false,
+    error: 'Mesačný strop kľúčov je plný.',
+  });
+});
+
 test('a late tick does not stop the loop that started after pause', async () => {
   const pending = [];
   const desk = createBrowserDesk({
