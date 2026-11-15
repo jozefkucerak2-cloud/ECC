@@ -6,7 +6,7 @@ const path = require('node:path');
 
 const { loadConfig } = require('./config');
 const { createHeliusPool, watchPool } = require('./helius');
-const { LIMITS, emptyLedger, haltLedger, loadLedger, runCycle } = require('./paper/cycle');
+const { LIMITS, emptyLedger, haltLedger, loadLedger, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
 
 const DESK_FILE = path.join(__dirname, '..', 'desk', 'index.html');
 
@@ -208,6 +208,15 @@ function createDesk(options = {}) {
     return snapshot();
   }
 
+  function release() {
+    const ledger = releaseLedger(readPaper(paperFile));
+    writePaper(paperFile, ledger);
+    state.halted = false;
+    state.error = null;
+    state.decision = 'kill uvoľnený, pozície ostávajú';
+    return snapshot();
+  }
+
   function connectRpc(body) {
     if (state.running) {
       state.error = 'Najprv pauza, potom výmena RPC.';
@@ -252,7 +261,7 @@ function createDesk(options = {}) {
     return snapshot();
   }
 
-  return { snapshot, start, halt, kill, connectRpc, connectWallet };
+  return { snapshot, start, halt, kill, release, connectRpc, connectWallet };
 }
 
 function openedLedger(file) {
@@ -329,6 +338,13 @@ function bookOf(file) {
       side: order.side,
       wallet: shortId(order.wallet),
       mint: shortId(order.mint),
+    })),
+    ladder: traderLadder(ledger.trades).map((row) => ({
+      address: shortId(row.address),
+      classified: row.classified,
+      need: LIMITS.minTraderSamples,
+      side: row.side,
+      mint: shortId(row.mint),
     })),
   };
 }
@@ -469,6 +485,10 @@ function createServer(desk) {
       }
       if (request.method === 'POST' && url.pathname === '/api/kill') {
         sendJson(response, 200, desk.kill());
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/api/release') {
+        sendJson(response, 200, desk.release());
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/rpc') {

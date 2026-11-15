@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { classifyTrade } = require('../src/classify');
-const { emptyLedger, loadLedger, haltLedger, runCycle, LIMITS } = require('../src/paper/cycle');
+const { emptyLedger, loadLedger, haltLedger, releaseLedger, runCycle, LIMITS } = require('../src/paper/cycle');
 
 const NOW = 1_700_000_000;
 const MINT = 'Mint111111111111111111111111111111111111111';
@@ -77,4 +77,8 @@ test('kill keeps the open position and blocks the next entry', () => {
   assert.equal(blocked.ledger.positions.length, 1);
   assert.equal(blocked.ledger.orders.length, 1);
   assert.match(blocked.decision, /kill/);
+  const released = releaseLedger(blocked.ledger);
+  assert.equal(released.halted, false);
+  assert.equal(released.positions.length, 1);
+  assert.equal(released.mode, 'paper');
 });

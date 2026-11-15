@@ -169,6 +169,37 @@ test('a private key is refused and a public address is kept', async () => {
   assert.equal(JSON.stringify(body).includes(secret), false);
 });
 
+test('the ladder counts clean trades toward 30', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const paperPath = path.join(directory, 'paper.json');
+  const address = 'So11111111111111111111111111111111111111112';
+  fs.writeFileSync(paperPath, JSON.stringify({
+    version: 1,
+    mode: 'paper',
+    halted: false,
+    trades: [0, 1, 2, 3].map((index) => ({
+      signature: `sig-${index}`,
+      address,
+      side: 'buy',
+      mint: 'Mint111111111111111111111111111111111111111',
+      blockTime: 1000 + index,
+    })),
+    orders: [],
+    positions: [],
+  }));
+  const desk = createDesk({
+    env: {},
+    paperPath,
+    secretPath: path.join(directory, 'rpc.json'),
+  });
+  const ladder = desk.snapshot().book.ladder;
+  assert.equal(ladder.length, 1);
+  assert.equal(ladder[0].classified, 4);
+  assert.equal(ladder[0].need, 30);
+  assert.equal(ladder[0].side, 'buy');
+  assert.equal(JSON.stringify(ladder).includes(address), false);
+});
+
 test('a restarted desk still shows kill from the book', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
   const paperPath = path.join(directory, 'paper.json');
@@ -213,6 +244,14 @@ test('a restarted desk still shows kill from the book', async () => {
   assert.equal(during.halted, true);
   assert.equal(during.roles.find((role) => role.id === 'executor').state, 'drží pozície');
   await desk.halt();
+  const released = desk.release();
+  assert.equal(released.halted, false);
+  assert.equal(released.book.openPositions, 1);
+  assert.equal(released.decision, 'kill uvoľnený, pozície ostávajú');
+  assert.equal(released.roles.find((role) => role.id === 'executor').state, 'pripravený');
+  const saved = JSON.parse(fs.readFileSync(paperPath, 'utf8'));
+  assert.equal(saved.halted, false);
+  assert.equal(saved.positions.length, 1);
 });
 
 test('kill keeps the paper book and does not echo a key', async () => {

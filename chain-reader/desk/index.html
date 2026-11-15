@@ -104,6 +104,8 @@
     .tag { justify-self: end; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
     .tag.live { color: #12140c; background: var(--lime); padding: 3px 6px; }
     .empty { margin: 8px 0 0; color: var(--dim); font-size: 13px; line-height: 1.45; }
+    .rows li .lane { grid-column: 1 / -1; height: 3px; margin-top: 6px; background: rgba(244, 241, 234, 0.08); }
+    .lane span { display: block; height: 100%; background: var(--lime); }
     @media (max-width: 980px) {
       html, body, .app { height: auto; }
       .app { grid-template-rows: auto auto; }
@@ -175,6 +177,7 @@
             <button class="solid" id="start" type="button">Spustiť paper</button>
             <button id="stop" type="button">Pauza</button>
             <button class="hot" id="kill" type="button">Kill</button>
+            <button id="release" type="button">Uvoľniť kill</button>
           </div>
         </div>
         <div class="metrics">
@@ -182,6 +185,11 @@
           <div class="metric"><small>Sviežosť</small><b id="lim-age">60 s</b></div>
           <div class="metric"><small>Pozície</small><b id="lim-pos">0 / 3</b></div>
           <div class="metric"><small>Príkazy dnes</small><b id="lim-day">0 / 10</b></div>
+        </div>
+        <div>
+          <div class="block-head"><p>Rebríček</p><p id="ladder-count">0 / 30</p></div>
+          <p class="empty" id="ladder-empty">Žiadny čistý obchod. Rebríček sa plní z načítanej reťaze, návrh až pri 30.</p>
+          <ul class="rows" id="ladder"></ul>
         </div>
         <div class="split">
           <div>
@@ -286,6 +294,27 @@
         orders.append(row);
       });
       document.getElementById('book-empty').hidden = (book.openPositions || 0) + (book.ordersTotal || 0) > 0;
+      const ladder = document.getElementById('ladder');
+      ladder.replaceChildren();
+      const rows = book.ladder || [];
+      const best = rows[0] ? rows[0].classified : 0;
+      text('ladder-count', best + ' / ' + (limits.minTraderSamples || 30));
+      document.getElementById('ladder-empty').hidden = rows.length > 0;
+      rows.forEach((row) => {
+        const item = document.createElement('li');
+        const name = document.createElement('strong');
+        name.textContent = row.address;
+        const meta = document.createElement('span');
+        meta.textContent = (row.side || '—') + ' · ' + row.classified + '/' + row.need;
+        const bar = document.createElement('div');
+        bar.className = 'lane';
+        const fill = document.createElement('span');
+        const need = row.need || 30;
+        fill.style.width = Math.min(100, Math.round((row.classified / need) * 100)) + '%';
+        bar.append(fill);
+        item.append(name, meta, bar);
+        ladder.append(item);
+      });
       const last = data.last || {};
       text('sample', last.sample || 'čaká');
       text('wallets', last.walletCount == null ? '0' : String(last.walletCount));
@@ -304,6 +333,8 @@
         text('status', data.error);
       } else if (data.running) {
         text('status', 'Paper číta reťaz. Na sieť sa nič neposiela.');
+      } else if (data.halted) {
+        text('status', 'Kill drží pozície. Uvoľniť kill ich nezatvára a na sieť nič nepošle.');
       } else if (connected) {
         text('status', 'RPC je pripojené. Spustiť paper spustí čítanie.');
       } else {
@@ -312,6 +343,7 @@
       start.disabled = Boolean(data.running);
       stop.disabled = !data.running;
       kill.disabled = false;
+      document.getElementById('release').disabled = !data.halted;
       document.getElementById('save-rpc').disabled = false;
     }
 
@@ -321,6 +353,7 @@
       start.disabled = true;
       stop.disabled = true;
       kill.disabled = true;
+      document.getElementById('release').disabled = true;
       document.getElementById('save-rpc').disabled = true;
     }
 
@@ -399,6 +432,7 @@
     start.addEventListener('click', () => postJson('/api/start').catch((error) => text('status', error.message)));
     stop.addEventListener('click', () => postJson('/api/stop').catch((error) => text('status', error.message)));
     kill.addEventListener('click', () => postJson('/api/kill').catch((error) => text('status', error.message)));
+    document.getElementById('release').addEventListener('click', () => postJson('/api/release').catch((error) => text('status', error.message)));
 
     function tick() {
       text('clock', new Date().toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));

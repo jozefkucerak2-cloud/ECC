@@ -28,6 +28,19 @@ function haltLedger(raw) {
   return { ...loadLedger(raw), halted: true };
 }
 
+function releaseLedger(raw) {
+  return { ...loadLedger(raw), halted: false, mode: 'paper' };
+}
+
+function traderLadder(trades) {
+  return rankWallets(trades).slice(0, 5).map((row) => ({
+    address: row.address,
+    classified: row.classified,
+    side: row.last ? row.last.side : null,
+    mint: row.last ? row.last.mint : null,
+  }));
+}
+
 function runCycle(rawLedger, observation, nowSeconds) {
   const ledger = loadLedger(rawLedger);
   ledger.trades = mergeTrades(ledger.trades, observation && observation.trades);
@@ -177,5 +190,7 @@ module.exports = {
   emptyLedger,
   loadLedger,
   haltLedger,
+  releaseLedger,
+  traderLadder,
   runCycle,
 };
