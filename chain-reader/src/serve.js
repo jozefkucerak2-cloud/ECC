@@ -196,6 +196,9 @@ function createDesk(options = {}) {
     if (state.token === token) {
       state.loop = null;
     }
+    if (state.error === 'Najprv pauza, potom výmena RPC.') {
+      state.error = null;
+    }
     return snapshot();
   }
 
@@ -224,14 +227,24 @@ function createDesk(options = {}) {
       error.statusCode = 409;
       throw error;
     }
-    let next;
+    let incoming;
     try {
-      next = normalizeSecrets(body);
+      incoming = normalizeSecrets(body);
     } catch (error) {
       state.error = error.message;
       throw error;
     }
-    next.wallet = state.wallet;
+    const next = {
+      keys: incoming.keys.map((key, index) => key || state.secrets.keys[index] || ''),
+      projects: incoming.projects.map((project, index) => project || state.secrets.projects[index] || ''),
+      wallet: state.wallet,
+    };
+    if (!next.keys.some(Boolean)) {
+      state.error = 'Chýba aspoň jeden Helius kľúč.';
+      const error = new Error(state.error);
+      error.statusCode = 400;
+      throw error;
+    }
     state.secrets = next;
     if (secretFile) {
       writeSecrets(secretFile, next);
@@ -368,11 +381,6 @@ function normalizeSecrets(body) {
   const source = body && typeof body === 'object' ? body : {};
   const keys = [1, 2, 3].map((index) => cleanField(source[`key${index}`]));
   const projects = [1, 2, 3].map((index) => cleanField(source[`project${index}`]));
-  if (!keys.some(Boolean)) {
-    const error = new Error('Chýba aspoň jeden Helius kľúč.');
-    error.statusCode = 400;
-    throw error;
-  }
   for (const key of keys) {
     if (key && !RPC_KEY.test(key)) {
       const error = new Error('Kľúč má zlý tvar. Súkromný kľúč peňaženky sa neprijíma.');

@@ -151,6 +151,53 @@ test('an rpc key is stored locally and is absent from the status', async () => {
   }
 });
 
+test('a later key keeps the ones already stored', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const secretPath = path.join(directory, 'rpc.json');
+  const desk = createDesk({
+    env: {},
+    paperPath: path.join(directory, 'paper.json'),
+    secretPath,
+  });
+  const project = '11111111-1111-4111-8111-111111111111';
+  desk.connectRpc({ key1: KEY, project1: project });
+  const body = desk.connectRpc({ key2: 'helius-key-bbbb' });
+  assert.deepEqual(body.keys, [true, true, false]);
+  assert.deepEqual(body.projectIds, [true, false, false]);
+  const saved = JSON.parse(fs.readFileSync(secretPath, 'utf8'));
+  assert.equal(saved.keys[0], KEY);
+  assert.equal(saved.keys[1], 'helius-key-bbbb');
+  assert.equal(saved.projects[0], project);
+  assert.equal(JSON.stringify(body).includes(KEY), false);
+});
+
+test('pause clears the message that asked for a pause', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const desk = createDesk({
+    env: { HELIUS_API_KEY_1: KEY, ELITE_SOLANA_RPC_URL: 'https://rpc.example' },
+    paperPath: path.join(directory, 'paper.json'),
+    secretPath: path.join(directory, 'rpc.json'),
+    createPool: () => ({
+      async refreshUsage() {},
+      msUntilPoll() {
+        return 0;
+      },
+      async discover() {
+        return { trades: [], wallets: [], fetchedSignatures: 0, skipped: 0, sample: 'insufficient' };
+      },
+    }),
+    watch: (_pool, options) => new Promise((resolve) => {
+      options.signal.addEventListener('abort', () => resolve(), { once: true });
+    }),
+  });
+  await desk.start();
+  await assert.rejects(() => Promise.resolve().then(() => desk.connectRpc({ key2: 'helius-key-bbbb' })), (error) => error.statusCode === 409);
+  assert.match(desk.snapshot().error, /pauza/);
+  await desk.halt();
+  assert.equal(desk.snapshot().error, null);
+  assert.deepEqual(desk.snapshot().keys, [true, false, false]);
+});
+
 test('a private key is refused and a public address is kept', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
   const desk = createDesk({

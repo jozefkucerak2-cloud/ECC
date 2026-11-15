@@ -327,10 +327,11 @@
       } else if (config.error) {
         text('program', config.error);
       }
-      if (localNote) {
-        text('status', localNote);
-      } else if (data.error) {
+      if (data.error) {
+        localNote = '';
         text('status', data.error);
+      } else if (localNote) {
+        text('status', localNote);
       } else if (data.running) {
         text('status', 'Paper číta reťaz. Na sieť sa nič neposiela.');
       } else if (data.halted) {
@@ -344,7 +345,7 @@
       stop.disabled = !data.running;
       kill.disabled = false;
       document.getElementById('release').disabled = !data.halted;
-      document.getElementById('save-rpc').disabled = false;
+      document.getElementById('save-rpc').disabled = Boolean(data.running);
     }
 
     function offline() {
@@ -377,6 +378,10 @@
 
     document.getElementById('rpc-form').addEventListener('submit', (event) => {
       event.preventDefault();
+      if (!online) {
+        offline();
+        return;
+      }
       const body = {
         key1: document.getElementById('key1').value,
         key2: document.getElementById('key2').value,
@@ -385,12 +390,7 @@
         project2: document.getElementById('project2').value,
         project3: document.getElementById('project3').value,
       };
-      clearRpc();
-      if (!online) {
-        offline();
-        return;
-      }
-      postJson('/api/rpc', body).catch((error) => text('status', error.message));
+      postJson('/api/rpc', body).then(() => clearRpc()).catch((error) => text('status', error.message));
     });
 
     document.getElementById('wallet-form').addEventListener('submit', (event) => {
