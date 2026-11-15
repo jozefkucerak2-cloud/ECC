@@ -59,13 +59,14 @@ function createDesk(options = {}) {
   const paperFile = options.paperPath || path.join(__dirname, '..', 'data', 'paper-ledger.json');
   const secretFile = options.secretPath || null;
   const loaded = secretFile ? readSecrets(secretFile) : emptySecrets();
+  const opened = openedLedger(paperFile);
   const state = {
     running: false,
     last: null,
     error: null,
-    decision: 'bez príkazu',
+    decision: opened.halted ? 'kill drží pozície' : 'bez príkazu',
     events: [],
-    halted: false,
+    halted: opened.halted,
     controller: null,
     loop: null,
     token: null,
@@ -252,6 +253,14 @@ function createDesk(options = {}) {
   }
 
   return { snapshot, start, halt, kill, connectRpc, connectWallet };
+}
+
+function openedLedger(file) {
+  try {
+    return readPaper(file);
+  } catch {
+    return emptyLedger();
+  }
 }
 
 function readPaper(file) {

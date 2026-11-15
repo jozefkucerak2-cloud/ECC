@@ -17,11 +17,13 @@ function listen(server) {
 }
 
 test('desk status names keys without revealing them', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
   const desk = createDesk({
     env: {
       HELIUS_API_KEY_1: KEY,
       ELITE_SOLANA_RPC_URL: 'https://rpc.example',
     },
+    paperPath: path.join(directory, 'paper.json'),
   });
   const body = JSON.stringify(desk.snapshot());
   assert.equal(body.includes(KEY), false);
@@ -165,6 +167,52 @@ test('a private key is refused and a public address is kept', async () => {
   assert.equal(body.wallet, address);
   assert.equal(body.roles.find((role) => role.id === 'wallet').state, 'pripojená');
   assert.equal(JSON.stringify(body).includes(secret), false);
+});
+
+test('a restarted desk still shows kill from the book', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const paperPath = path.join(directory, 'paper.json');
+  fs.writeFileSync(paperPath, JSON.stringify({
+    version: 1,
+    mode: 'live',
+    halted: true,
+    trades: [],
+    orders: [],
+    positions: [{
+      id: 'kept',
+      wallet: 'So11111111111111111111111111111111111111112',
+      mint: 'So11111111111111111111111111111111111111112',
+      units: 1,
+    }],
+  }));
+  const desk = createDesk({
+    env: { HELIUS_API_KEY_1: KEY, ELITE_SOLANA_RPC_URL: 'https://rpc.example' },
+    paperPath,
+    secretPath: path.join(directory, 'rpc.json'),
+    createPool: () => ({
+      async refreshUsage() {},
+      msUntilPoll() {
+        return 0;
+      },
+      async discover() {
+        return { trades: [], wallets: [], fetchedSignatures: 0, skipped: 0, sample: 'insufficient' };
+      },
+    }),
+    watch: (_pool, options) => new Promise((resolve) => {
+      options.signal.addEventListener('abort', () => resolve(), { once: true });
+    }),
+  });
+  const before = desk.snapshot();
+  assert.equal(before.halted, true);
+  assert.equal(before.decision, 'kill drží pozície');
+  assert.equal(before.book.openPositions, 1);
+  assert.equal(before.roles.find((role) => role.id === 'executor').state, 'drží pozície');
+  await desk.start();
+  const during = desk.snapshot();
+  assert.equal(during.running, true);
+  assert.equal(during.halted, true);
+  assert.equal(during.roles.find((role) => role.id === 'executor').state, 'drží pozície');
+  await desk.halt();
 });
 
 test('kill keeps the paper book and does not echo a key', async () => {
