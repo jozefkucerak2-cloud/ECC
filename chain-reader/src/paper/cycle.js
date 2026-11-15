@@ -186,16 +186,17 @@ function markExamined(wallets, observation) {
     : [];
   const prior = wallets[observation.address] || blankWallet();
   const walkingOlder = typeof observation.startedBefore === 'string' && observation.startedBefore.length > 0;
-  const cursor = examined.length > 0 && (!prior.cursor || walkingOlder)
-    ? examined[examined.length - 1]
-    : prior.cursor;
+  const resume = typeof observation.resumeBefore === 'string' && observation.resumeBefore
+    ? observation.resumeBefore
+    : (examined.length > 0 ? examined[examined.length - 1] : null);
+  const cursor = resume && (!prior.cursor || walkingOlder) ? resume : prior.cursor;
   return {
     ...wallets,
     [observation.address]: {
       ...prior,
       skip: walkingOlder ? prior.skip : rememberTip(prior.skip, examined),
       cursor,
-      exhausted: prior.exhausted || (walkingOlder && examined.length === 0),
+      exhausted: prior.exhausted || observation.historyDone === true,
     },
   };
 }

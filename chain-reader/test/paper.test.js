@@ -207,10 +207,33 @@ test('an empty older page ends the wallet walk', () => {
     programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
     startedBefore: 'junk',
     examined: [],
+    historyDone: true,
     trades: [],
   }, NOW, OUR);
   assert.equal(done.ledger.wallets.WalletA.exhausted, true);
   assert.equal(focusAddress(done.ledger, NOW), null);
+});
+
+test('failed signatures in an older walk keep the wallet and move the cursor', () => {
+  const started = runCycle(emptyLedger(), {
+    address: 'WalletA',
+    programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+    examined: ['junk'],
+    trades: [],
+  }, NOW, OUR);
+  const older = runCycle(started.ledger, {
+    address: 'WalletA',
+    programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+    startedBefore: 'junk',
+    examined: [],
+    resumeBefore: 'failed-oldest',
+    historyDone: false,
+    trades: [],
+  }, NOW, OUR);
+  const focus = focusAddress(older.ledger, NOW);
+  assert.equal(older.ledger.wallets.WalletA.exhausted, false);
+  assert.equal(focus.address, 'WalletA');
+  assert.equal(focus.before, 'failed-oldest');
 });
 
 test('a dump in the entry block closes even when the book was written later', () => {

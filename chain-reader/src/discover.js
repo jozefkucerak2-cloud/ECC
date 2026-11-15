@@ -17,6 +17,8 @@ async function discoverRecentWallets(config, options = {}) {
   let calls = 0;
   let before = options.before || null;
   let cursor = null;
+  let resumeBefore = null;
+  let historyDone = false;
 
   for (let page = 0; page < 4 && calls < budget; page += 1) {
     const params = { limit };
@@ -29,14 +31,25 @@ async function discoverRecentWallets(config, options = {}) {
       throw Object.assign(new Error('signature list was not an array'), { category: 'alert' });
     }
     fetched += signatures.length;
-    cursor = signatures.length > 0 ? signatures[signatures.length - 1].signature : cursor;
+    if (signatures.length === 0) {
+      historyDone = true;
+      break;
+    }
+    cursor = signatures[signatures.length - 1].signature;
     let read = 0;
+    let finishedPage = true;
     for (const row of signatures) {
       if (calls >= budget) {
+        finishedPage = false;
         break;
       }
-      if (!row || row.err || typeof row.signature !== 'string' || seen.has(row.signature)) {
+      if (!row || typeof row.signature !== 'string') {
         skipped += 1;
+        continue;
+      }
+      if (row.err || seen.has(row.signature)) {
+        skipped += 1;
+        resumeBefore = row.signature;
         continue;
       }
       const tx = await client.call('getTransaction', [
@@ -47,6 +60,7 @@ async function discoverRecentWallets(config, options = {}) {
       read += 1;
       seen.add(row.signature);
       examined.push(row.signature);
+      resumeBefore = row.signature;
       const payer = feePayer(tx);
       if (!payer) {
         skipped += 1;
@@ -64,10 +78,17 @@ async function discoverRecentWallets(config, options = {}) {
         tokenRaw: trade.tokenRaw,
       });
     }
-    if (read > 0 || signatures.length === 0 || !cursor || cursor === before) {
+    if (!finishedPage) {
       break;
     }
-    before = cursor;
+    if (signatures.length < limit) {
+      historyDone = true;
+      break;
+    }
+    if (read > 0 || !resumeBefore || resumeBefore === before) {
+      break;
+    }
+    before = resumeBefore;
   }
 
   const wallets = [...counts.entries()]
@@ -84,6 +105,8 @@ async function discoverRecentWallets(config, options = {}) {
     examined,
     sample: fetched >= config.minCleanSample ? 'ok' : 'insufficient',
     startedBefore: options.before || null,
+    resumeBefore,
+    historyDone,
     nextCursor: cursor,
     wallets,
     trades,

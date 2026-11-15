@@ -299,6 +299,8 @@ var EliteEngine = (() => {
         let calls = 0;
         let before = options.before || null;
         let cursor = null;
+        let resumeBefore = null;
+        let historyDone = false;
         for (let page = 0; page < 4 && calls < budget; page += 1) {
           const params = { limit };
           if (before) {
@@ -310,14 +312,25 @@ var EliteEngine = (() => {
             throw Object.assign(new Error("signature list was not an array"), { category: "alert" });
           }
           fetched += signatures.length;
-          cursor = signatures.length > 0 ? signatures[signatures.length - 1].signature : cursor;
+          if (signatures.length === 0) {
+            historyDone = true;
+            break;
+          }
+          cursor = signatures[signatures.length - 1].signature;
           let read = 0;
+          let finishedPage = true;
           for (const row of signatures) {
             if (calls >= budget) {
+              finishedPage = false;
               break;
             }
-            if (!row || row.err || typeof row.signature !== "string" || seen.has(row.signature)) {
+            if (!row || typeof row.signature !== "string") {
               skipped += 1;
+              continue;
+            }
+            if (row.err || seen.has(row.signature)) {
+              skipped += 1;
+              resumeBefore = row.signature;
               continue;
             }
             const tx = await client.call("getTransaction", [
@@ -328,6 +341,7 @@ var EliteEngine = (() => {
             read += 1;
             seen.add(row.signature);
             examined.push(row.signature);
+            resumeBefore = row.signature;
             const payer = feePayer(tx);
             if (!payer) {
               skipped += 1;
@@ -345,10 +359,17 @@ var EliteEngine = (() => {
               tokenRaw: trade.tokenRaw
             });
           }
-          if (read > 0 || signatures.length === 0 || !cursor || cursor === before) {
+          if (!finishedPage) {
             break;
           }
-          before = cursor;
+          if (signatures.length < limit) {
+            historyDone = true;
+            break;
+          }
+          if (read > 0 || !resumeBefore || resumeBefore === before) {
+            break;
+          }
+          before = resumeBefore;
         }
         const wallets = [...counts.entries()].map(([wallet, txCount]) => ({ address: wallet, txCount })).sort((a, b) => b.txCount - a.txCount || a.address.localeCompare(b.address));
         return {
@@ -361,6 +382,8 @@ var EliteEngine = (() => {
           examined,
           sample: fetched >= config.minCleanSample ? "ok" : "insufficient",
           startedBefore: options.before || null,
+          resumeBefore,
+          historyDone,
           nextCursor: cursor,
           wallets,
           trades
@@ -606,14 +629,15 @@ var EliteEngine = (() => {
         const examined = Array.isArray(observation.examined) ? observation.examined.filter((item) => typeof item === "string") : [];
         const prior = wallets[observation.address] || blankWallet();
         const walkingOlder = typeof observation.startedBefore === "string" && observation.startedBefore.length > 0;
-        const cursor = examined.length > 0 && (!prior.cursor || walkingOlder) ? examined[examined.length - 1] : prior.cursor;
+        const resume = typeof observation.resumeBefore === "string" && observation.resumeBefore ? observation.resumeBefore : examined.length > 0 ? examined[examined.length - 1] : null;
+        const cursor = resume && (!prior.cursor || walkingOlder) ? resume : prior.cursor;
         return {
           ...wallets,
           [observation.address]: {
             ...prior,
             skip: walkingOlder ? prior.skip : rememberTip(prior.skip, examined),
             cursor,
-            exhausted: prior.exhausted || walkingOlder && examined.length === 0
+            exhausted: prior.exhausted || observation.historyDone === true
           }
         };
       }

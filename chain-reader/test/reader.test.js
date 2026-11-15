@@ -157,11 +157,64 @@ test('a page of already seen signatures walks to the older page', async () => {
     address: 'WalletA',
     seen: ['known'],
     budget: 31,
+    limit: 1,
   });
   assert.deepEqual(fetched, ['older']);
   assert.equal(found.examined.includes('older'), true);
   assert.equal(found.examined.includes('known'), false);
   assert.equal(found.startedBefore, null);
+});
+
+test('failed pages leave history open and the cursor moves past them', async () => {
+  const pages = [];
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.method !== 'getSignaturesForAddress') {
+      throw new Error('failed signature was fetched');
+    }
+    const before = body.params[1] && body.params[1].before;
+    pages.push(before || 'tip');
+    const start = pages.length * 2;
+    return jsonResponse({
+      result: [
+        { signature: `bad-${start}`, err: { InstructionError: [0, 'x'] } },
+        { signature: `bad-${start + 1}`, err: { InstructionError: [0, 'x'] } },
+      ],
+    });
+  };
+  const found = await discoverRecentWallets(loadConfig(baseEnv()), {
+    fetch: fetchImpl,
+    address: 'WalletA',
+    limit: 2,
+    budget: 31,
+    before: 'start',
+  });
+  assert.deepEqual(pages, ['start', 'bad-3', 'bad-5', 'bad-7']);
+  assert.equal(found.examined.length, 0);
+  assert.equal(found.historyDone, false);
+  assert.equal(found.resumeBefore, 'bad-9');
+});
+
+test('a short page of failed signatures finishes the history', async () => {
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.method !== 'getSignaturesForAddress') {
+      throw new Error('failed signature was fetched');
+    }
+    return jsonResponse({
+      result: [{ signature: 'bad-last', err: { InstructionError: [0, 'x'] } }],
+    });
+  };
+  const found = await discoverRecentWallets(loadConfig(baseEnv()), {
+    fetch: fetchImpl,
+    address: 'WalletA',
+    limit: 5,
+    before: 'start',
+    budget: 31,
+  });
+  assert.equal(found.historyDone, true);
+  assert.equal(found.resumeBefore, 'bad-last');
+  assert.deepEqual(found.examined, []);
 });
 
 test('fee payer accepts a legacy string account key', () => {
