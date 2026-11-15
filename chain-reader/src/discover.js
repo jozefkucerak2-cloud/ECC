@@ -1,6 +1,7 @@
 'use strict';
 
 const { createRpcClient } = require('./rpc');
+const { classifyTrade } = require('./classify');
 
 async function discoverRecentWallets(config, options = {}) {
   const client = options.client || createRpcClient(config, options.fetch);
@@ -16,6 +17,7 @@ async function discoverRecentWallets(config, options = {}) {
   }
 
   const counts = new Map();
+  const trades = [];
   let skipped = 0;
   for (const row of signatures) {
     if (!row || row.err || typeof row.signature !== 'string') {
@@ -32,6 +34,14 @@ async function discoverRecentWallets(config, options = {}) {
       continue;
     }
     counts.set(payer, (counts.get(payer) || 0) + 1);
+    const trade = classifyTrade(tx, payer);
+    trades.push({
+      signature: row.signature,
+      address: payer,
+      side: trade.side,
+      mint: trade.mint,
+      blockTime: trade.blockTime,
+    });
   }
 
   const wallets = [...counts.entries()]
@@ -48,6 +58,7 @@ async function discoverRecentWallets(config, options = {}) {
     sample: fetched >= config.minCleanSample ? 'ok' : 'insufficient',
     nextCursor: oldest,
     wallets,
+    trades,
   };
 }
 

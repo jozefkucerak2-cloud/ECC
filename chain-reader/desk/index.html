@@ -196,10 +196,11 @@
         <p class="kicker">Paper konzola</p>
         <h1>Elite</h1>
         <div class="mark" id="mark" aria-hidden="true"><div class="eye"><span></span></div></div>
-        <p class="lede" id="lede">Čítač pozerá verejné podpisy. Obchod neotvára a Phantom nie je pripojený.</p>
+        <p class="lede" id="lede">Paper tím číta reťaz a zapisuje len skúšobný príkaz. Phantom nie je pripojený.</p>
         <div class="actions">
-          <button id="start" type="button">Spustiť čítač</button>
-          <button id="stop" class="ghost" type="button">Zastaviť</button>
+          <button id="start" type="button">Spustiť paper</button>
+          <button id="stop" class="ghost" type="button">Pauza</button>
+          <button id="kill" class="ghost" type="button">Kill</button>
         </div>
       </div>
       <p class="note" id="hint" style="color:#6f6a60"></p>
@@ -210,15 +211,16 @@
         <div class="mode" id="mode">PAPER</div>
       </div>
       <ol id="roles">
-        <li><strong>Čítač</strong><span class="pill pripraveny">pripravený</span><span class="detail">Helius, posledné podpisy pump programu</span></li>
-        <li><strong>Analytik</strong><span class="pill chyba">chýba</span><span class="detail">Ešte nie je v kóde</span></li>
-        <li><strong>Skeptik</strong><span class="pill chyba">chýba</span><span class="detail">Ešte nie je v kóde</span></li>
-        <li><strong>CEO</strong><span class="pill chyba">chýba</span><span class="detail">Ešte nie je v kóde</span></li>
-        <li><strong>Risk governor</strong><span class="pill chyba">chýba</span><span class="detail">Ešte nie je v kóde</span></li>
-        <li><strong>Executor</strong><span class="pill vypnuty">vypnutý</span><span class="detail">Transakcie sú zakázané</span></li>
-        <li><strong>Telegram</strong><span class="pill chyba">chýba</span><span class="detail">Ešte nie je v kóde</span></li>
+        <li><strong>Čítač</strong><span class="pill pripraveny">pripravený</span><span class="detail">Helius, podpisy a smer z pohybov zostatkov</span></li>
+        <li><strong>Analytik</strong><span class="pill pripraveny">pripravený</span><span class="detail">Návrh až po 30 čistých obchodoch jedného obchodníka</span></li>
+        <li><strong>Skeptik</strong><span class="pill pripraveny">pripravený</span><span class="detail">Veto platí, CEO ho neprepíše</span></li>
+        <li><strong>CEO</strong><span class="pill pripraveny">pripravený</span><span class="detail">Limity nemení</span></li>
+        <li><strong>Risk governor</strong><span class="pill pripraveny">pripravený</span><span class="detail">Posledné slovo, paper stropy</span></li>
+        <li><strong>Executor</strong><span class="pill pripraveny">pripravený</span><span class="detail">Zapíše paper príkaz, na sieť nič neposiela</span></li>
+        <li><strong>Hlásenie</strong><span class="pill pripraveny">pripravený</span><span class="detail">Riadok na tejto ploche</span></li>
         <li><strong>Phantom</strong><span class="pill nepripojena">nepripojená</span><span class="detail">Peňaženka nie je pripojená</span></li>
       </ol>
+      <p class="note" id="decision">bez príkazu</p>
       <div class="meters">
         <div class="meter"><small>Vzorka</small><b id="sample">—</b></div>
         <div class="meter"><small>Peňaženky</small><b id="wallets">—</b></div>
@@ -238,6 +240,7 @@
     const hint = document.getElementById('hint');
     const start = document.getElementById('start');
     const stop = document.getElementById('stop');
+    const kill = document.getElementById('kill');
 
     function pillClass(state) {
       return String(state || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -270,9 +273,11 @@
       document.getElementById('sample').textContent = last.sample || '—';
       document.getElementById('wallets').textContent = last.walletCount == null ? '—' : String(last.walletCount);
       document.getElementById('credits').textContent = last.creditsRemaining == null ? '—' : String(last.creditsRemaining);
-      hint.textContent = data.error || (data.running ? 'Čítač beží v tomto procese.' : 'Pripravený. Spustenie vezme kľúče len z prostredia.');
+      document.getElementById('decision').textContent = data.decision || 'bez príkazu';
+      hint.textContent = data.error || (data.running ? 'Paper beh beží v tomto procese.' : 'Pripravený. Spustenie vezme kľúče len z prostredia.');
       start.disabled = Boolean(data.running);
       stop.disabled = !data.running;
+      kill.disabled = false;
     }
 
     async function refresh() {
@@ -290,10 +295,12 @@
 
     start.addEventListener('click', () => post('/api/start').catch((error) => { hint.textContent = error.message; }));
     stop.addEventListener('click', () => post('/api/stop').catch((error) => { hint.textContent = error.message; }));
+    kill.addEventListener('click', () => post('/api/kill').catch((error) => { hint.textContent = error.message; }));
     refresh().catch(() => {
-      hint.textContent = 'Táto stránka je len obraz. Čítač sa púšťa na tvojom stroji príkazom node chain-reader/src/serve.js';
+      hint.textContent = 'Táto stránka je obraz. Beh spustíš na svojom stroji príkazom node chain-reader/src/serve.js';
       start.disabled = true;
       stop.disabled = true;
+      kill.disabled = true;
     });
     setInterval(() => { refresh().catch(() => {}); }, 2000);
   </script>

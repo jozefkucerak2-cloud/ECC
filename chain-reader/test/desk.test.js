@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 
 const { createDesk, createServer } = require('../src/serve');
@@ -26,7 +29,8 @@ test('desk status names keys without revealing them', async () => {
   assert.deepEqual(status.keys, [true, false, false]);
   assert.equal(status.mode, 'paper');
   assert.equal(status.roles.find((role) => role.id === 'wallet').state, 'nepripojená');
-  assert.equal(status.roles.find((role) => role.id === 'executor').state, 'vypnutý');
+  assert.equal(status.roles.find((role) => role.id === 'executor').state, 'pripravený');
+  assert.equal(status.roles.find((role) => role.id === 'skeptic').state, 'pripravený');
 });
 
 test('start without keys is refused and the page is served', async () => {
@@ -39,10 +43,32 @@ test('start without keys is refused and the page is served', async () => {
     const page = await fetch(`http://127.0.0.1:${port}/`);
     const html = await page.text();
     assert.equal(page.status, 200);
-    assert.match(html, /Elite/);
+    assert.match(html, /Spustiť paper/);
     const status = await fetch(`http://127.0.0.1:${port}/api/status`);
     const json = await status.json();
     assert.equal(json.running, false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('kill keeps the paper book and does not echo a key', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const desk = createDesk({
+    env: { HELIUS_API_KEY_1: KEY, ELITE_SOLANA_RPC_URL: 'https://rpc.example' },
+    paperPath: path.join(directory, 'paper.json'),
+  });
+  const server = createServer(desk);
+  const port = await listen(server);
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/kill`, { method: 'POST' });
+    const body = await response.json();
+    assert.equal(body.decision, 'kill drží pozície');
+    assert.equal(body.roles.find((role) => role.id === 'executor').state, 'drží pozície');
+    assert.equal(JSON.stringify(body).includes(KEY), false);
+    const saved = JSON.parse(fs.readFileSync(path.join(directory, 'paper.json'), 'utf8'));
+    assert.equal(saved.mode, 'paper');
+    assert.equal(saved.halted, true);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

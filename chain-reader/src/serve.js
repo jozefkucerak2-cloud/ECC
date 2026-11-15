@@ -6,17 +6,18 @@ const path = require('node:path');
 
 const { loadConfig } = require('./config');
 const { createHeliusPool, watchPool } = require('./helius');
+const { emptyLedger, haltLedger, loadLedger, runCycle } = require('./paper/cycle');
 
 const DESK_FILE = path.join(__dirname, '..', 'desk', 'index.html');
 
 const ROLES = Object.freeze([
-  { id: 'reader', name: 'Čítač', detail: 'Helius, posledné podpisy pump programu' },
-  { id: 'analyst', name: 'Analytik', detail: 'Ešte nie je v kóde' },
-  { id: 'skeptic', name: 'Skeptik', detail: 'Ešte nie je v kóde' },
-  { id: 'ceo', name: 'CEO', detail: 'Ešte nie je v kóde' },
-  { id: 'risk', name: 'Risk governor', detail: 'Ešte nie je v kóde' },
-  { id: 'executor', name: 'Executor', detail: 'Transakcie sú zakázané' },
-  { id: 'notifier', name: 'Telegram', detail: 'Ešte nie je v kóde' },
+  { id: 'reader', name: 'Čítač', detail: 'Helius, podpisy a smer z pohybov zostatkov' },
+  { id: 'analyst', name: 'Analytik', detail: 'Návrh až po 30 čistých obchodoch jedného obchodníka' },
+  { id: 'skeptic', name: 'Skeptik', detail: 'Veto platí, CEO ho neprepíše' },
+  { id: 'ceo', name: 'CEO', detail: 'Limity nemení' },
+  { id: 'risk', name: 'Risk governor', detail: 'Posledné slovo, paper stropy' },
+  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz, na sieť nič neposiela' },
+  { id: 'notifier', name: 'Hlásenie', detail: 'Riadok na tejto ploche' },
   { id: 'wallet', name: 'Phantom', detail: 'Peňaženka nie je pripojená' },
 ]);
 
@@ -36,10 +37,13 @@ function createDesk(options = {}) {
   const env = options.env || process.env;
   const createPool = options.createPool || createHeliusPool;
   const watch = options.watch || watchPool;
+  const paperFile = options.paperPath || path.join(__dirname, '..', 'data', 'paper-ledger.json');
   const state = {
     running: false,
     last: null,
     error: null,
+    decision: 'bez príkazu',
+    halted: false,
     controller: null,
   };
 
@@ -50,10 +54,12 @@ function createDesk(options = {}) {
       keys: keyPresence(env),
       projectIds: projectPresence(env),
       last: state.last,
+      decision: state.decision,
+      halted: state.halted,
       error: state.error,
       roles: ROLES.map((role) => ({
         ...role,
-        state: roleState(role.id, state.running),
+        state: roleState(role.id, state.running, state.halted),
       })),
     };
   }
@@ -85,7 +91,11 @@ function createDesk(options = {}) {
     watch(pool, {
       signal,
       onResult(result) {
+        const cycle = runCycle(readPaper(paperFile), result, Math.floor(Date.now() / 1000));
+        writePaper(paperFile, cycle.ledger);
         state.last = publicResult(result);
+        state.decision = cycle.decision;
+        state.halted = cycle.ledger.halted;
       },
     }).catch((error) => {
       state.running = false;
@@ -102,20 +112,44 @@ function createDesk(options = {}) {
     return snapshot();
   }
 
-  return { snapshot, start, halt };
+  function kill() {
+    const ledger = haltLedger(readPaper(paperFile));
+    writePaper(paperFile, ledger);
+    state.halted = true;
+    state.error = null;
+    state.decision = 'kill drží pozície';
+    return snapshot();
+  }
+
+  return { snapshot, start, halt, kill };
 }
 
-function roleState(id, running) {
-  if (id === 'reader') {
-    return running ? 'beží' : 'pripravený';
+function readPaper(file) {
+  try {
+    return loadLedger(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return emptyLedger();
+    }
+    throw error;
   }
-  if (id === 'executor') {
-    return 'vypnutý';
-  }
+}
+
+function writePaper(file, ledger) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify(ledger));
+  fs.renameSync(temporary, file);
+}
+
+function roleState(id, running, halted) {
   if (id === 'wallet') {
     return 'nepripojená';
   }
-  return 'chýba';
+  if (halted && id === 'executor') {
+    return 'drží pozície';
+  }
+  return running ? 'beží' : 'pripravený';
 }
 
 function publicResult(result) {
@@ -155,6 +189,10 @@ function createServer(desk) {
       }
       if (request.method === 'POST' && url.pathname === '/api/stop') {
         sendJson(response, 200, desk.halt());
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/api/kill') {
+        sendJson(response, 200, desk.kill());
         return;
       }
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
