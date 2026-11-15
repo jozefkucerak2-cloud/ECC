@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { classifyTrade } = require('../src/classify');
-const { emptyLedger, focusAddress, loadLedger, haltLedger, releaseLedger, rollCredits, runCycle, LIMITS } = require('../src/paper/cycle');
+const { emptyLedger, focusAddress, loadLedger, haltLedger, ordersOnDay, releaseLedger, rollCredits, runCycle, LIMITS } = require('../src/paper/cycle');
 
 const NOW = 1_700_000_000;
 const MINT = 'Mint111111111111111111111111111111111111111';
@@ -141,6 +141,58 @@ test('a price through the stop closes the paper row and the notice is its own li
   assert.match(notifier, /Stop/);
   assert.match(notifier, /Telefón/);
   assert.notEqual(notifier, executor);
+});
+
+test('an unknown signature is remembered so the next poll can walk older history', () => {
+  const first = runCycle(emptyLedger(), {
+    address: 'WalletA',
+    programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+    examined: ['junk', 'buy-0'],
+    trades: trades(1, 'buy'),
+  }, NOW, OUR);
+  assert.equal(first.ledger.wallets.WalletA.classified, 1);
+  assert.equal(first.ledger.wallets.WalletA.seen.includes('junk'), true);
+  const again = runCycle(first.ledger, {
+    address: 'WalletA',
+    programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+    examined: ['junk'],
+    trades: [],
+  }, NOW, OUR);
+  assert.equal(again.ledger.wallets.WalletA.classified, 1);
+  assert.equal(focusAddress(again.ledger, NOW).seen.includes('junk'), true);
+});
+
+test('a price from before the entry does not close the paper row', () => {
+  const opened = runCycle(emptyLedger(), { trades: trades(30, 'buy') }, NOW, OUR);
+  const kept = runCycle(opened.ledger, {
+    trades: [{
+      signature: 'old-dump',
+      address: 'WalletB',
+      side: 'sell',
+      mint: MINT,
+      blockTime: NOW - 30,
+      solLamports: 1,
+      tokenRaw: '1000000',
+    }],
+  }, NOW + 5, OUR);
+  assert.equal(kept.ledger.positions.length, 1);
+  assert.equal(kept.ledger.orders.some((order) => order.side === 'stop'), false);
+});
+
+test('a stop fill does not count toward the daily order cap', () => {
+  const opened = runCycle(emptyLedger(), { trades: trades(30, 'buy') }, NOW, OUR);
+  const closed = runCycle(opened.ledger, {
+    trades: [{
+      signature: 'cheap',
+      address: 'WalletB',
+      side: 'sell',
+      mint: MINT,
+      blockTime: NOW + 5,
+      solLamports: 1,
+      tokenRaw: '1000000',
+    }],
+  }, NOW + 5, OUR);
+  assert.equal(ordersOnDay(closed.ledger.orders, '2023-11-14'), 1);
 });
 
 test('a stored trade list becomes a capped wallet and the next read follows it', () => {

@@ -137,6 +137,32 @@ test('a wallet page skips a signature that was already counted', async () => {
   assert.equal(found.trades[0].signature, 'fresh');
 });
 
+test('a page of already seen signatures walks to the older page', async () => {
+  const fetched = [];
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.method === 'getSignaturesForAddress') {
+      if (body.params[1] && body.params[1].before === 'known') {
+        return jsonResponse({ result: [{ signature: 'older', err: null }] });
+      }
+      return jsonResponse({ result: [{ signature: 'known', err: null }] });
+    }
+    fetched.push(body.params[0]);
+    return jsonResponse({
+      result: { transaction: { message: { accountKeys: ['WalletA'] } } },
+    });
+  };
+  const found = await discoverRecentWallets(loadConfig(baseEnv()), {
+    fetch: fetchImpl,
+    address: 'WalletA',
+    seen: ['known'],
+    budget: 31,
+  });
+  assert.deepEqual(fetched, ['older']);
+  assert.equal(found.examined.includes('older'), true);
+  assert.equal(found.examined.includes('known'), false);
+});
+
 test('fee payer accepts a legacy string account key', () => {
   assert.equal(feePayer({
     transaction: { message: { accountKeys: ['LegacyPayer'] } },

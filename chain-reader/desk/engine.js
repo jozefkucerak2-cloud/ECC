@@ -297,6 +297,7 @@ var EliteEngine = (() => {
         const budget = Number.isInteger(options.budget) ? options.budget : 1 + limit;
         const counts = /* @__PURE__ */ new Map();
         const trades = [];
+        const examined = [];
         let skipped = 0;
         let fetched = 0;
         let calls = 0;
@@ -330,6 +331,7 @@ var EliteEngine = (() => {
             calls += 1;
             read += 1;
             seen.add(row.signature);
+            examined.push(row.signature);
             const payer = feePayer(tx);
             if (!payer) {
               skipped += 1;
@@ -360,6 +362,7 @@ var EliteEngine = (() => {
           fetchedSignatures: fetched,
           skipped,
           calls,
+          examined,
           sample: fetched >= config.minCleanSample ? "ok" : "insufficient",
           nextCursor: cursor,
           wallets,
@@ -524,7 +527,8 @@ var EliteEngine = (() => {
       function runCycle(rawLedger, observation, nowSeconds, account) {
         let ledger = loadLedger(rawLedger);
         const incoming = Array.isArray(observation && observation.trades) ? observation.trades : [];
-        ledger = { ...ledger, wallets: incoming.reduce((wallets, trade) => absorb(wallets, trade), ledger.wallets) };
+        const wallets = incoming.reduce((next, trade) => absorb(next, trade), ledger.wallets);
+        ledger = { ...ledger, wallets: markExamined(wallets, observation) };
         const best = rankWallets(ledger.wallets)[0] || null;
         const analyst = propose(best);
         const skeptic = review(best, nowSeconds);
@@ -555,10 +559,11 @@ var EliteEngine = (() => {
             return wallets;
           }
           const seen = Array.isArray(row.seen) ? row.seen.filter((item) => typeof item === "string").slice(0, LIMITS.seenCap) : [];
+          const classified = Number.isInteger(row.classified) ? row.classified : seen.length;
           return {
             ...wallets,
             [address]: {
-              classified: seen.length,
+              classified,
               seen,
               last: row.last && typeof row.last === "object" ? { ...row.last } : null
             }
@@ -576,12 +581,38 @@ var EliteEngine = (() => {
         if (prior.seen.includes(trade.signature)) {
           return wallets;
         }
-        const seen = prior.seen.length >= LIMITS.seenCap ? prior.seen.slice(prior.seen.length - LIMITS.seenCap + 1).concat(trade.signature) : prior.seen.concat(trade.signature);
+        const seen = rememberSignature(prior.seen, trade.signature);
         const last = !prior.last || (trade.blockTime || 0) >= (prior.last.blockTime || 0) ? compactTrade(trade) : prior.last;
         return {
           ...wallets,
-          [trade.address]: { classified: Math.max(prior.classified, seen.length), seen, last }
+          [trade.address]: { classified: prior.classified + 1, seen, last }
         };
+      }
+      function markExamined(wallets, observation) {
+        if (!observation || typeof observation.address !== "string" || observation.address === observation.programId) {
+          return wallets;
+        }
+        const examined = Array.isArray(observation.examined) ? observation.examined : [];
+        return examined.reduce((next, signature) => noteSeen(next, observation.address, signature), wallets);
+      }
+      function noteSeen(wallets, address, signature) {
+        if (typeof address !== "string" || typeof signature !== "string") {
+          return wallets;
+        }
+        const prior = wallets[address] || { classified: 0, seen: [], last: null };
+        if (prior.seen.includes(signature)) {
+          return wallets;
+        }
+        return {
+          ...wallets,
+          [address]: { ...prior, seen: rememberSignature(prior.seen, signature) }
+        };
+      }
+      function rememberSignature(seen, signature) {
+        if (seen.length >= LIMITS.seenCap) {
+          return seen.slice(seen.length - LIMITS.seenCap + 1).concat(signature);
+        }
+        return seen.concat(signature);
       }
       function compactTrade(trade) {
         return {
@@ -665,8 +696,7 @@ var EliteEngine = (() => {
         if (order.side === "buy" && ledger.positions.length >= LIMITS.maxOpenPositions) {
           return { approved: false, order: null, note: "tri paper poz\xEDcie s\xFA pln\xE9" };
         }
-        const day = utcDay(nowSeconds);
-        const today = ledger.orders.filter((item) => item.side !== "stop" && utcDay(item.recordedAt) === day).length;
+        const today = ordersOnDay(ledger.orders, utcDay(nowSeconds));
         if (today >= LIMITS.maxOrdersPerDay) {
           return { approved: false, order: null, note: "denn\xFD strop 10 paper pr\xEDkazov" };
         }
@@ -712,7 +742,13 @@ var EliteEngine = (() => {
           if (price == null || typeof trade.mint !== "string") {
             continue;
           }
-          const hitting = positions.filter((position) => position.mint === trade.mint && position.stopPrice != null && price <= position.stopPrice);
+          if (trade.side !== "buy" && trade.side !== "sell") {
+            continue;
+          }
+          if (!Number.isInteger(trade.blockTime)) {
+            continue;
+          }
+          const hitting = positions.filter((position) => position.mint === trade.mint && position.stopPrice != null && price <= position.stopPrice && Number.isInteger(position.openedAt) && trade.blockTime > position.openedAt);
           if (hitting.length === 0) {
             continue;
           }
@@ -755,6 +791,9 @@ var EliteEngine = (() => {
         }
         return sol / tokens;
       }
+      function ordersOnDay(orders, day) {
+        return (Array.isArray(orders) ? orders : []).filter((item) => item && item.side !== "stop" && utcDay(item.recordedAt) === day).length;
+      }
       function utcDay(seconds) {
         if (!Number.isInteger(seconds)) {
           return "";
@@ -770,6 +809,7 @@ var EliteEngine = (() => {
         releaseLedger,
         traderLadder,
         focusAddress,
+        ordersOnDay,
         runCycle
       };
     }
@@ -781,7 +821,7 @@ var EliteEngine = (() => {
       var { PUMP_PROGRAM_ID } = require_config();
       var { discoverRecentWallets } = require_discover();
       var { parseHeliusKey } = require_helius_key();
-      var { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, releaseLedger, rollCredits, runCycle, traderLadder } = require_cycle();
+      var { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, ordersOnDay, releaseLedger, rollCredits, runCycle, traderLadder } = require_cycle();
       var POLL_CREDITS = 31;
       var USABLE_CREDITS = 95e4;
       var MONTH_MS = 30 * 24 * 60 * 60 * 1e3;
@@ -1125,7 +1165,7 @@ var EliteEngine = (() => {
         return {
           halted: ledger.halted,
           openPositions: ledger.positions.length,
-          ordersToday: ledger.orders.filter((order) => dayOf(order.recordedAt) === day).length,
+          ordersToday: ordersOnDay(ledger.orders, day),
           ordersTotal: ledger.orders.length,
           trades: Object.values(ledger.wallets).reduce((sum, row) => sum + row.classified, 0),
           positions: ledger.positions.slice(-5).map((position) => ({
@@ -1159,12 +1199,6 @@ var EliteEngine = (() => {
           return "dr\u017E\xED poz\xEDcie";
         }
         return running ? "be\u017E\xED" : "pripraven\xFD";
-      }
-      function dayOf(seconds) {
-        if (!Number.isInteger(seconds)) {
-          return "";
-        }
-        return new Date(seconds * 1e3).toISOString().slice(0, 10);
       }
       function shortId(value) {
         const text = String(value || "");

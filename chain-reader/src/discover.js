@@ -11,6 +11,7 @@ async function discoverRecentWallets(config, options = {}) {
   const budget = Number.isInteger(options.budget) ? options.budget : 1 + limit;
   const counts = new Map();
   const trades = [];
+  const examined = [];
   let skipped = 0;
   let fetched = 0;
   let calls = 0;
@@ -45,6 +46,7 @@ async function discoverRecentWallets(config, options = {}) {
       calls += 1;
       read += 1;
       seen.add(row.signature);
+      examined.push(row.signature);
       const payer = feePayer(tx);
       if (!payer) {
         skipped += 1;
@@ -79,6 +81,7 @@ async function discoverRecentWallets(config, options = {}) {
     fetchedSignatures: fetched,
     skipped,
     calls,
+    examined,
     sample: fetched >= config.minCleanSample ? 'ok' : 'insufficient',
     nextCursor: cursor,
     wallets,

@@ -3,7 +3,7 @@
 const { PUMP_PROGRAM_ID } = require('./config');
 const { discoverRecentWallets } = require('./discover');
 const { parseHeliusKey } = require('./helius-key');
-const { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, releaseLedger, rollCredits, runCycle, traderLadder } = require('./paper/cycle');
+const { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, ordersOnDay, releaseLedger, rollCredits, runCycle, traderLadder } = require('./paper/cycle');
 
 const POLL_CREDITS = 31;
 const USABLE_CREDITS = 950_000;
@@ -371,7 +371,7 @@ function bookOf(ledger) {
   return {
     halted: ledger.halted,
     openPositions: ledger.positions.length,
-    ordersToday: ledger.orders.filter((order) => dayOf(order.recordedAt) === day).length,
+    ordersToday: ordersOnDay(ledger.orders, day),
     ordersTotal: ledger.orders.length,
     trades: Object.values(ledger.wallets).reduce((sum, row) => sum + row.classified, 0),
     positions: ledger.positions.slice(-5).map((position) => ({
@@ -406,13 +406,6 @@ function roleState(id, running, halted, wallet) {
     return 'drží pozície';
   }
   return running ? 'beží' : 'pripravený';
-}
-
-function dayOf(seconds) {
-  if (!Number.isInteger(seconds)) {
-    return '';
-  }
-  return new Date(seconds * 1000).toISOString().slice(0, 10);
 }
 
 function shortId(value) {

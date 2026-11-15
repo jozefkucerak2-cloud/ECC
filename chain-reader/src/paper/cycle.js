@@ -97,7 +97,8 @@ function focusAddress(raw, nowSeconds) {
 function runCycle(rawLedger, observation, nowSeconds, account) {
   let ledger = loadLedger(rawLedger);
   const incoming = Array.isArray(observation && observation.trades) ? observation.trades : [];
-  ledger = { ...ledger, wallets: incoming.reduce((wallets, trade) => absorb(wallets, trade), ledger.wallets) };
+  const wallets = incoming.reduce((next, trade) => absorb(next, trade), ledger.wallets);
+  ledger = { ...ledger, wallets: markExamined(wallets, observation) };
   const best = rankWallets(ledger.wallets)[0] || null;
   const analyst = propose(best);
   const skeptic = review(best, nowSeconds);
@@ -130,10 +131,11 @@ function normalizeWallets(source) {
       return wallets;
     }
     const seen = Array.isArray(row.seen) ? row.seen.filter((item) => typeof item === 'string').slice(0, LIMITS.seenCap) : [];
+    const classified = Number.isInteger(row.classified) ? row.classified : seen.length;
     return {
       ...wallets,
       [address]: {
-        classified: seen.length,
+        classified,
         seen,
         last: row.last && typeof row.last === 'object' ? { ...row.last } : null,
       },
@@ -152,14 +154,41 @@ function absorb(wallets, trade) {
   if (prior.seen.includes(trade.signature)) {
     return wallets;
   }
-  const seen = prior.seen.length >= LIMITS.seenCap
-    ? prior.seen.slice(prior.seen.length - LIMITS.seenCap + 1).concat(trade.signature)
-    : prior.seen.concat(trade.signature);
+  const seen = rememberSignature(prior.seen, trade.signature);
   const last = !prior.last || (trade.blockTime || 0) >= (prior.last.blockTime || 0) ? compactTrade(trade) : prior.last;
   return {
     ...wallets,
-    [trade.address]: { classified: Math.max(prior.classified, seen.length), seen, last },
+    [trade.address]: { classified: prior.classified + 1, seen, last },
   };
+}
+
+function markExamined(wallets, observation) {
+  if (!observation || typeof observation.address !== 'string' || observation.address === observation.programId) {
+    return wallets;
+  }
+  const examined = Array.isArray(observation.examined) ? observation.examined : [];
+  return examined.reduce((next, signature) => noteSeen(next, observation.address, signature), wallets);
+}
+
+function noteSeen(wallets, address, signature) {
+  if (typeof address !== 'string' || typeof signature !== 'string') {
+    return wallets;
+  }
+  const prior = wallets[address] || { classified: 0, seen: [], last: null };
+  if (prior.seen.includes(signature)) {
+    return wallets;
+  }
+  return {
+    ...wallets,
+    [address]: { ...prior, seen: rememberSignature(prior.seen, signature) },
+  };
+}
+
+function rememberSignature(seen, signature) {
+  if (seen.length >= LIMITS.seenCap) {
+    return seen.slice(seen.length - LIMITS.seenCap + 1).concat(signature);
+  }
+  return seen.concat(signature);
 }
 
 function compactTrade(trade) {
@@ -249,8 +278,7 @@ function govern(order, ledger, nowSeconds, account) {
   if (order.side === 'buy' && ledger.positions.length >= LIMITS.maxOpenPositions) {
     return { approved: false, order: null, note: 'tri paper pozície sú plné' };
   }
-  const day = utcDay(nowSeconds);
-  const today = ledger.orders.filter((item) => item.side !== 'stop' && utcDay(item.recordedAt) === day).length;
+  const today = ordersOnDay(ledger.orders, utcDay(nowSeconds));
   if (today >= LIMITS.maxOrdersPerDay) {
     return { approved: false, order: null, note: 'denný strop 10 paper príkazov' };
   }
@@ -298,7 +326,19 @@ function applyStops(ledger, trades, nowSeconds) {
     if (price == null || typeof trade.mint !== 'string') {
       continue;
     }
-    const hitting = positions.filter((position) => position.mint === trade.mint && position.stopPrice != null && price <= position.stopPrice);
+    if (trade.side !== 'buy' && trade.side !== 'sell') {
+      continue;
+    }
+    if (!Number.isInteger(trade.blockTime)) {
+      continue;
+    }
+    const hitting = positions.filter((position) => (
+      position.mint === trade.mint
+      && position.stopPrice != null
+      && price <= position.stopPrice
+      && Number.isInteger(position.openedAt)
+      && trade.blockTime > position.openedAt
+    ));
     if (hitting.length === 0) {
       continue;
     }
@@ -346,6 +386,10 @@ function priceOf(trade) {
   return sol / tokens;
 }
 
+function ordersOnDay(orders, day) {
+  return (Array.isArray(orders) ? orders : []).filter((item) => item && item.side !== 'stop' && utcDay(item.recordedAt) === day).length;
+}
+
 function utcDay(seconds) {
   if (!Number.isInteger(seconds)) {
     return '';
@@ -362,5 +406,6 @@ module.exports = {
   releaseLedger,
   traderLadder,
   focusAddress,
+  ordersOnDay,
   runCycle,
 };

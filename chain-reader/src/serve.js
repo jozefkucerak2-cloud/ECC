@@ -7,7 +7,7 @@ const path = require('node:path');
 const { loadConfig } = require('./config');
 const { createHeliusPool, watchPool } = require('./helius');
 const { parseHeliusKey } = require('./helius-key');
-const { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
+const { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, ordersOnDay, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
 
 const DESK_FILE = path.join(__dirname, '..', 'desk', 'index.html');
 const ENGINE_FILE = path.join(__dirname, '..', 'desk', 'engine.js');
@@ -346,7 +346,7 @@ function bookOf(file) {
   return {
     halted: ledger.halted,
     openPositions: ledger.positions.length,
-    ordersToday: ledger.orders.filter((order) => dayOf(order.recordedAt) === day).length,
+    ordersToday: ordersOnDay(ledger.orders, day),
     ordersTotal: ledger.orders.length,
     trades: Object.values(ledger.wallets).reduce((sum, row) => sum + row.classified, 0),
     positions: ledger.positions.slice(-5).map((position) => ({
@@ -371,13 +371,6 @@ function bookOf(file) {
       mint: shortId(row.mint),
     })),
   };
-}
-
-function dayOf(seconds) {
-  if (!Number.isInteger(seconds)) {
-    return '';
-  }
-  return new Date(seconds * 1000).toISOString().slice(0, 10);
 }
 
 function shortId(value) {
