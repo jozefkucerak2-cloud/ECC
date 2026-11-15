@@ -623,6 +623,7 @@ var EliteEngine = (() => {
         const onUpdate = options.onUpdate || (() => {
         });
         const auto = options.auto !== false;
+        const usable = options.usableCredits || USABLE_CREDITS;
         let keys = ["", "", ""];
         let projects = ["", "", ""];
         let wallet = null;
@@ -630,6 +631,7 @@ var EliteEngine = (() => {
         let running = false;
         let timer = null;
         let cursor = 0;
+        let generation = 0;
         let last = null;
         let decision = ledger.halted ? "kill dr\u017E\xED poz\xEDcie" : "bez pr\xEDkazu";
         let error = null;
@@ -699,16 +701,17 @@ var EliteEngine = (() => {
           error = null;
           return snapshot();
         }
-        async function tick() {
+        async function tick(token = generation) {
+          if (token !== generation) {
+            return null;
+          }
           const slot = pickSlot();
           if (slot < 0) {
+            if (token !== generation) {
+              return null;
+            }
             running = false;
-            error = "Ch\xFDba aspo\u0148 jeden Helius k\u013E\xFA\u010D.";
-            return snapshot();
-          }
-          if (used[slot] + POLL_CREDITS > USABLE_CREDITS) {
-            running = false;
-            error = "Mesa\u010Dn\xFD strop tohto k\u013E\xFA\u010Da je pln\xFD.";
+            error = keys.some(Boolean) ? "Mesa\u010Dn\xFD strop k\u013E\xFA\u010Dov je pln\xFD." : "Ch\xFDba aspo\u0148 jeden Helius k\u013E\xFA\u010D.";
             return snapshot();
           }
           const result = await discoverRecentWallets({
@@ -720,6 +723,9 @@ var EliteEngine = (() => {
             minCleanSample: 30,
             programId: PUMP_PROGRAM_ID
           }, { fetch: fetchImpl, limit: 30 });
+          if (token !== generation) {
+            return null;
+          }
           used[slot] += 1 + result.fetchedSignatures;
           const cycle = runCycle(ledger, result, Math.floor(Date.now() / 1e3));
           ledger = cycle.ledger;
@@ -728,14 +734,17 @@ var EliteEngine = (() => {
             sample: result.sample,
             walletCount: Array.isArray(result.wallets) ? result.wallets.length : 0,
             fetchedSignatures: result.fetchedSignatures,
-            creditsRemaining: USABLE_CREDITS - used[slot]
+            creditsRemaining: usable - used[slot]
           };
           error = null;
           store(storage, ledger);
           return snapshot();
         }
+        function readySlots() {
+          return keys.map((key, index) => key && used[index] + POLL_CREDITS <= usable ? index : -1).filter((index) => index >= 0);
+        }
         function pickSlot() {
-          const ready = keys.map((key, index) => key ? index : -1).filter((index) => index >= 0);
+          const ready = readySlots();
           if (ready.length === 0) {
             return -1;
           }
@@ -751,36 +760,43 @@ var EliteEngine = (() => {
             error = "RPC nie je pripojen\xE9. Vlo\u017E Helius k\u013E\xFA\u010D v\u013Eavo.";
             throw fail(error, 409);
           }
+          generation += 1;
           running = true;
           error = null;
           if (auto) {
-            schedule(0);
+            schedule(0, generation);
           }
           return snapshot();
         }
-        function schedule(delay) {
+        function schedule(delay, token) {
           if (timer) {
             clearTimeout(timer);
           }
           timer = setTimeout(async () => {
-            if (!running) {
+            if (token !== generation || !running) {
               return;
             }
             try {
-              const next = await tick();
-              onUpdate(next);
+              const next = await tick(token);
+              if (next && token === generation && running) {
+                onUpdate(next);
+              }
             } catch (caught) {
+              if (token !== generation) {
+                return;
+              }
               running = false;
               error = publicRpcError(caught);
               onUpdate(snapshot());
               return;
             }
-            if (running) {
-              schedule(paceMs(keys.filter(Boolean).length));
+            if (token === generation && running) {
+              schedule(paceMs(Math.max(1, readySlots().length)), token);
             }
           }, delay);
         }
         function halt() {
+          generation += 1;
           running = false;
           if (timer) {
             clearTimeout(timer);

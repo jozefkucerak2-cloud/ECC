@@ -54,6 +54,45 @@ test('a rejected Helius key stops the loop without the key in the error', async 
   desk.halt();
 });
 
+test('an exhausted key leaves the next key running', async () => {
+  const seen = [];
+  const desk = createBrowserDesk({
+    auto: false,
+    usableCredits: 31,
+    fetch: async (url) => {
+      seen.push(new URL(url).searchParams.get('api-key'));
+      return json({ result: [] });
+    },
+  });
+  desk.connectRpc({ key1: KEY, key2: 'helius-key-bbbb' });
+  await desk.tick();
+  await desk.tick();
+  const stopped = await desk.tick();
+  assert.deepEqual(seen, [KEY, 'helius-key-bbbb']);
+  assert.equal(stopped.error, 'Mesačný strop kľúčov je plný.');
+  assert.equal(stopped.running, false);
+});
+
+test('a late tick does not stop the loop that started after pause', async () => {
+  const pending = [];
+  const desk = createBrowserDesk({
+    auto: true,
+    fetch: () => new Promise((resolve) => {
+      pending.push(resolve);
+    }),
+  });
+  desk.connectRpc({ key1: KEY });
+  desk.start();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  desk.halt();
+  desk.start();
+  pending[0](json({ result: [] }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(desk.snapshot().running, true);
+  assert.equal(desk.snapshot().decision, 'bez príkazu');
+  desk.halt();
+});
+
 test('a browser desk keeps a public Phantom address', () => {
   const desk = createBrowserDesk({ auto: false });
   const address = 'So11111111111111111111111111111111111111112';

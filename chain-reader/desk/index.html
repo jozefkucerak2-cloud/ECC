@@ -484,7 +484,10 @@
       if (!response.ok || !type.includes('application/json')) {
         throw new Error('status');
       }
-      browser = null;
+      if (browser) {
+        browser.halt();
+        browser = null;
+      }
       paint(await response.json());
     }
 
