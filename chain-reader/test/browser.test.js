@@ -114,6 +114,96 @@ test('a late tick does not stop the loop that started after pause', async () => 
   desk.halt();
 });
 
+test('credits stay across a reload and reset when the month turns', async () => {
+  const memory = new Map();
+  const storage = {
+    getItem: (key) => memory.get(key) || null,
+    setItem: (key, value) => memory.set(key, value),
+  };
+  const started = 1_700_000_000_000;
+  const desk = createBrowserDesk({
+    auto: false,
+    storage,
+    now: () => started,
+    fetch: async () => json({ result: [] }),
+  });
+  desk.connectRpc({ key1: KEY });
+  await desk.tick();
+  assert.equal(desk.snapshot().credits[0].remaining, 950_000 - 1);
+  const reloaded = createBrowserDesk({
+    auto: false,
+    storage,
+    now: () => started + 1000,
+    fetch: async () => json({ result: [] }),
+  });
+  reloaded.connectRpc({ key1: KEY });
+  assert.equal(reloaded.snapshot().credits[0].remaining, 950_000 - 1);
+  assert.equal(memory.get('elite-desk-book').includes(KEY), false);
+  const month = 30 * 24 * 60 * 60 * 1000;
+  const rolled = createBrowserDesk({
+    auto: false,
+    storage,
+    now: () => started + month,
+    fetch: async () => json({ result: [] }),
+  });
+  rolled.connectRpc({ key1: KEY });
+  const after = await rolled.tick();
+  assert.equal(after.credits[0].remaining, 950_000 - 1);
+});
+
+test('a 429 spends the attempt and the next key continues', async () => {
+  const seen = [];
+  const desk = createBrowserDesk({
+    auto: false,
+    fetch: async (url) => {
+      const key = new URL(url).searchParams.get('api-key');
+      seen.push(key);
+      if (key === KEY) {
+        return { ok: false, status: 429, async json() { return {}; } };
+      }
+      return json({ result: [] });
+    },
+  });
+  desk.connectRpc({ key1: KEY, key2: 'helius-key-bbbb' });
+  const after = await desk.tick();
+  assert.deepEqual(seen, [KEY, 'helius-key-bbbb']);
+  assert.equal(after.error, null);
+  assert.equal(after.credits[0].remaining, 950_000 - 1);
+  assert.equal(after.credits[1].remaining, 950_000 - 1);
+});
+
+test('the next poll reads the wallet that is still under 30', async () => {
+  const memory = new Map();
+  memory.set('elite-desk-book', JSON.stringify({
+    version: 2,
+    wallets: {
+      WalletA: {
+        seen: ['s1', 's2', 's3', 's4'],
+        last: { signature: 's4', side: 'buy', mint: 'Mint', blockTime: 10 },
+      },
+    },
+  }));
+  const storage = {
+    getItem: (key) => memory.get(key) || null,
+    setItem: (key, value) => memory.set(key, value),
+  };
+  const addresses = [];
+  const desk = createBrowserDesk({
+    auto: false,
+    storage,
+    fetch: async (_url, init) => {
+      const body = JSON.parse(init.body);
+      if (body.method === 'getSignaturesForAddress') {
+        addresses.push(body.params[0]);
+      }
+      return json({ result: [] });
+    },
+  });
+  desk.connectRpc({ key1: KEY });
+  await desk.tick();
+  assert.deepEqual(addresses, ['WalletA']);
+});
+
 test('a browser desk keeps a public Phantom address', () => {
   const desk = createBrowserDesk({ auto: false });
   const address = 'So11111111111111111111111111111111111111112';

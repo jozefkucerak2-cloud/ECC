@@ -178,15 +178,14 @@ function createHeliusPool(env = process.env, options = {}) {
       }
       try {
         const result = await key.client.call(method, params);
-        key.tokens -= cost;
-        key.creditsUsed += cost;
-        key.calls += 1;
+        spend(key, cost);
         persist();
         return result;
       } catch (error) {
         lastError = scrub(error, secrets);
         const status = error.details && error.details.status;
         if (error instanceof RpcError && error.category === 'retry' && status === 429) {
+          spend(key, cost);
           key.rateLimits += 1;
           key.cooldownUntil = at + 1000;
           persist();
@@ -227,7 +226,14 @@ function createHeliusPool(env = process.env, options = {}) {
           signatureLimit,
           minCleanSample: discoverOptions.minCleanSample || minCleanSample,
         },
-        { client: { call }, limit: signatureLimit, before: discoverOptions.before },
+        {
+          client: { call },
+          limit: signatureLimit,
+          before: discoverOptions.before,
+          address: discoverOptions.address,
+          seen: discoverOptions.seen,
+          budget: pollCost(),
+        },
       );
       return { ...found, usage: statusOf(keys, now(), refill) };
     },
@@ -244,6 +250,12 @@ function createHeliusPool(env = process.env, options = {}) {
       return rows;
     },
   };
+}
+
+function spend(key, cost) {
+  key.tokens -= cost;
+  key.creditsUsed += cost;
+  key.calls += 1;
 }
 
 function creditCost(method) {
@@ -410,7 +422,8 @@ async function watchPool(pool, options = {}) {
       continue;
     }
     try {
-      const result = await pool.discover();
+      const extra = typeof options.discoverOptions === 'function' ? options.discoverOptions() : {};
+      const result = await pool.discover(extra || {});
       if (signal.aborted) {
         break;
       }

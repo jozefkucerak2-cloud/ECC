@@ -248,7 +248,7 @@
         </div>
         <div class="group">
           <p class="label">Lokálny proces</p>
-          <p class="fine"><code>node chain-reader/src/serve.js</code><br><code>http://127.0.0.1:8787</code></p>
+          <p class="fine"><code>node chain-reader/src/serve.js</code><br><code>http://127.0.0.1:8787</code><br>Nočný beh je tento proces na stroji, ktorý nespí. Hostená karta po zatvorení prestane.</p>
         </div>
       </aside>
       <section class="work">
@@ -292,18 +292,19 @@
               <div class="metric"><small>Podpisy</small><b id="fetched">0</b></div>
               <div class="metric"><small>Kredity</small><b id="credits">čaká</b></div>
             </div>
+            <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
             <p class="fine" id="program">Program pump 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P.</p>
           </div>
           <div>
             <div class="block-head"><p>Tím</p><p class="count" id="key-count">0 / 3 kľúčov</p></div>
             <ol class="roles" id="roles">
-              <li><strong>Čítač</strong><span class="tag">pripravený</span><span class="detail">Číta posledných 30 podpisov programu pump a z pohybov zostatkov určí buy alebo sell.</span></li>
+              <li><strong>Čítač</strong><span class="tag">pripravený</span><span class="detail">Najprv špička programu, potom vlastné podpisy peňaženky, ktorá ešte nemá 30 čistých obchodov. Jedno kolo má strop 31 volaní.</span></li>
               <li><strong>Analytik</strong><span class="tag">pripravený</span><span class="detail">Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.</span></li>
               <li><strong>Skeptik</strong><span class="tag">pripravený</span><span class="detail">Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.</span></li>
               <li><strong>CEO</strong><span class="tag">pripravený</span><span class="detail">Návrh posunie ďalej. Limity nezmení a veto neprepíše.</span></li>
-              <li><strong>Risk governor</strong><span class="tag">pripravený</span><span class="detail">Pustí príkaz len do 3 otvorených pozícií a 10 príkazov za UTC deň.</span></li>
-              <li><strong>Executor</strong><span class="tag">pripravený</span><span class="detail">Zapíše paper príkaz do knihy. Na sieť nič neposiela.</span></li>
-              <li><strong>Hlásenie</strong><span class="tag">pripravený</span><span class="detail">Posledný riadok je na tejto ploche. Telegram zatiaľ nie je zapojený.</span></li>
+              <li><strong>Risk governor</strong><span class="tag">pripravený</span><span class="detail">Pustí príkaz len na pripojenú verejnú adresu, do 3 pozícií a 10 príkazov za deň. Stop je 15 % pod vstupom.</span></li>
+              <li><strong>Executor</strong><span class="tag">pripravený</span><span class="detail">Zapíše paper príkaz na našu verejnú adresu. Na sieť nič neposiela.</span></li>
+              <li><strong>Hlásenie</strong><span class="tag">pripravený</span><span class="detail">Samostatný riadok na tejto ploche. Telefón sa zapojí až po zvolení kanála.</span></li>
               <li><strong>Phantom</strong><span class="tag">nepripojená</span><span class="detail">Ostáva odpojená. Live podpis nie je v tomto behu.</span></li>
             </ol>
           </div>
@@ -374,7 +375,8 @@
       orders.replaceChildren();
       (book.positions || []).forEach((position) => {
         const row = document.createElement('li');
-        row.textContent = position.wallet + ' · ' + position.mint + ' · ' + position.units;
+        const stop = position.stop == null ? 'bez stopu' : 'stop ' + position.stop;
+        row.textContent = (position.account || position.wallet) + ' · ' + (position.source || 'zdroj') + ' · ' + position.mint + ' · ' + stop;
         positions.append(row);
       });
       (book.recentOrders || []).forEach((order) => {
@@ -413,7 +415,11 @@
       text('sample', last.sample || 'čaká');
       text('wallets', last.walletCount == null ? '0' : String(last.walletCount));
       text('fetched', last.fetchedSignatures == null ? '0' : String(last.fetchedSignatures));
-      text('credits', last.creditsRemaining == null ? 'čaká' : String(last.creditsRemaining));
+      const creditRows = Array.isArray(data.credits) ? data.credits.filter((row) => row.present) : [];
+      text('credits', creditRows.length
+        ? creditRows.map((row) => row.slot + ': ' + row.remaining).join(' · ')
+        : (last.creditsRemaining == null ? 'čaká' : String(last.creditsRemaining)));
+      text('notice', data.notice || 'Bez nového paper zápisu. Telefón nie je zapojený.');
       text('decision', data.decision || 'bez príkazu');
       const config = data.config || {};
       if (config.ok) {
@@ -432,7 +438,7 @@
       } else if (localNote) {
         text('status', localNote);
       } else if (data.running && data.localLoop) {
-        text('status', 'Paper číta reťaz v tomto okne. Zavretie okna slučku zastaví. Na sieť sa nič neposiela.');
+        text('status', 'Paper číta v tomto okne. Nočný beh je lokálny proces na stroji, ktorý nespí. Zavretie karty slučku zastaví. Na sieť sa nič neposiela.');
       } else if (data.running) {
         text('status', 'Paper číta reťaz. Na sieť sa nič neposiela.');
       } else if (data.halted) {

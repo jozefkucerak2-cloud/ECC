@@ -6,22 +6,60 @@ const LIMITS = Object.freeze({
   minTraderSamples: 30,
   maxEventAgeSec: 60,
   paperUnits: 1,
+  stopBps: 1500,
+  seenCap: 120,
 });
 
+const PUBLIC_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
 function emptyLedger() {
-  return { version: 1, mode: 'paper', halted: false, trades: [], orders: [], positions: [] };
+  return {
+    version: 2,
+    mode: 'paper',
+    halted: false,
+    wallets: {},
+    orders: [],
+    positions: [],
+    credits: { cycleStartedAt: 0, used: [0, 0, 0] },
+    notice: 'Bez nového paper zápisu. Telefón nie je zapojený.',
+  };
 }
 
 function loadLedger(raw) {
-  const source = raw && raw.version === 1 ? raw : emptyLedger();
+  const source = raw && typeof raw === 'object' ? raw : emptyLedger();
+  const wallets = source.wallets && typeof source.wallets === 'object' && !Array.isArray(source.wallets)
+    ? normalizeWallets(source.wallets)
+    : walletsFromTrades(source.trades);
   return {
-    version: 1,
+    version: 2,
     mode: 'paper',
     halted: Boolean(source.halted),
-    trades: Array.isArray(source.trades) ? source.trades.map((trade) => ({ ...trade })) : [],
+    wallets,
     orders: Array.isArray(source.orders) ? source.orders.map((order) => ({ ...order })) : [],
     positions: Array.isArray(source.positions) ? source.positions.map((position) => ({ ...position })) : [],
+    credits: normalizeCredits(source.credits),
+    notice: typeof source.notice === 'string' ? source.notice : emptyLedger().notice,
   };
+}
+
+function normalizeCredits(credits) {
+  const used = [0, 1, 2].map((index) => {
+    const value = credits && Array.isArray(credits.used) ? Number(credits.used[index]) : 0;
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  });
+  const started = credits && Number.isFinite(Number(credits.cycleStartedAt)) ? Number(credits.cycleStartedAt) : 0;
+  return { cycleStartedAt: started > 0 ? started : 0, used };
+}
+
+function rollCredits(credits, nowMs, monthMs) {
+  const current = normalizeCredits(credits);
+  if (!current.cycleStartedAt) {
+    return { cycleStartedAt: nowMs, used: current.used };
+  }
+  if (nowMs - current.cycleStartedAt >= monthMs) {
+    return { cycleStartedAt: nowMs, used: [0, 0, 0] };
+  }
+  return current;
 }
 
 function haltLedger(raw) {
@@ -32,8 +70,8 @@ function releaseLedger(raw) {
   return { ...loadLedger(raw), halted: false, mode: 'paper' };
 }
 
-function traderLadder(trades) {
-  return rankWallets(trades).slice(0, 5).map((row) => ({
+function traderLadder(ledger) {
+  return rankWallets(loadLedger(ledger).wallets).slice(0, 5).map((row) => ({
     address: row.address,
     classified: row.classified,
     side: row.last ? row.last.side : null,
@@ -41,56 +79,108 @@ function traderLadder(trades) {
   }));
 }
 
-function runCycle(rawLedger, observation, nowSeconds) {
-  const ledger = loadLedger(rawLedger);
-  ledger.trades = mergeTrades(ledger.trades, observation && observation.trades);
-  const best = rankWallets(ledger.trades)[0] || null;
+function focusAddress(raw, nowSeconds) {
+  const ledger = loadLedger(raw);
+  const rows = rankWallets(ledger.wallets);
+  const filling = rows.filter((row) => row.classified < LIMITS.minTraderSamples && row.seen.length < LIMITS.seenCap);
+  if (filling.length > 0) {
+    return { address: filling[0].address, seen: filling[0].seen.slice() };
+  }
+  const now = Number.isInteger(nowSeconds) ? nowSeconds : 0;
+  const stale = rows.filter((row) => row.classified >= LIMITS.minTraderSamples && tradeAge(row.last, now) > LIMITS.maxEventAgeSec);
+  if (stale.length > 0) {
+    return { address: stale[0].address, seen: stale[0].seen.slice() };
+  }
+  return null;
+}
+
+function runCycle(rawLedger, observation, nowSeconds, account) {
+  let ledger = loadLedger(rawLedger);
+  const incoming = Array.isArray(observation && observation.trades) ? observation.trades : [];
+  ledger = { ...ledger, wallets: incoming.reduce((wallets, trade) => absorb(wallets, trade), ledger.wallets) };
+  const best = rankWallets(ledger.wallets)[0] || null;
   const analyst = propose(best);
   const skeptic = review(best, nowSeconds);
-  const order = skeptic.veto ? null : analyst.order;
-  const risk = govern(order, ledger, nowSeconds);
-  const executed = apply(risk, ledger, nowSeconds);
+  const copy = skeptic.veto ? null : analyst.order;
+  const stopped = applyStops(ledger, incoming, nowSeconds);
+  ledger = stopped.ledger;
+  const risk = govern(copy, ledger, nowSeconds, account);
+  const executed = apply(risk, ledger, nowSeconds, account);
+  ledger = { ...executed.ledger, notice: noticeFor(stopped.closed, executed) };
   const events = [
-    { role: 'reader', note: `${Array.isArray(observation && observation.trades) ? observation.trades.length : 0} záznamov v tomto kole` },
+    { role: 'reader', note: `${incoming.filter((trade) => trade && (trade.side === 'buy' || trade.side === 'sell')).length} čistých v tomto kole` },
     { role: 'analyst', note: analyst.note },
     { role: 'skeptic', note: skeptic.note },
     { role: 'ceo', note: skeptic.veto ? 'veto platí, limity sa nemenia' : 'návrh ide ďalej bez zmeny limitov' },
     { role: 'risk', note: risk.note },
     { role: 'executor', note: executed.note },
-    { role: 'notifier', note: executed.note },
+    { role: 'notifier', note: ledger.notice },
   ];
-  return { ledger: executed.ledger, events, decision: skeptic.veto ? skeptic.note : executed.note };
+  const decision = stopped.closed ? 'paper stop zatvoril pozíciu v knihe' : (skeptic.veto ? skeptic.note : executed.note);
+  return { ledger, events, decision };
 }
 
-function mergeTrades(existing, incoming) {
-  const seen = new Set(existing.map((trade) => trade.signature));
-  const trades = existing.map((trade) => ({ ...trade }));
-  for (const trade of incoming || []) {
-    if (!trade || typeof trade.signature !== 'string' || seen.has(trade.signature)) {
-      continue;
-    }
-    seen.add(trade.signature);
-    trades.push({ ...trade });
-  }
-  return trades;
+function walletsFromTrades(trades) {
+  return (Array.isArray(trades) ? trades : []).reduce((wallets, trade) => absorb(wallets, trade), {});
 }
 
-function rankWallets(trades) {
-  const wallets = new Map();
-  for (const trade of trades) {
-    if (!trade || typeof trade.address !== 'string') {
-      continue;
+function normalizeWallets(source) {
+  return Object.entries(source).reduce((wallets, [address, row]) => {
+    if (!row || typeof row !== 'object') {
+      return wallets;
     }
-    const row = wallets.get(trade.address) || { address: trade.address, classified: 0, last: null };
-    if (trade.side === 'buy' || trade.side === 'sell') {
-      row.classified += 1;
-      if (!row.last || (trade.blockTime || 0) >= (row.last.blockTime || 0)) {
-        row.last = trade;
-      }
-    }
-    wallets.set(trade.address, row);
+    const seen = Array.isArray(row.seen) ? row.seen.filter((item) => typeof item === 'string').slice(0, LIMITS.seenCap) : [];
+    return {
+      ...wallets,
+      [address]: {
+        classified: seen.length,
+        seen,
+        last: row.last && typeof row.last === 'object' ? { ...row.last } : null,
+      },
+    };
+  }, {});
+}
+
+function absorb(wallets, trade) {
+  if (!trade || typeof trade.address !== 'string' || typeof trade.signature !== 'string') {
+    return wallets;
   }
-  return [...wallets.values()].sort((a, b) => b.classified - a.classified || a.address.localeCompare(b.address));
+  if (trade.side !== 'buy' && trade.side !== 'sell') {
+    return wallets;
+  }
+  const prior = wallets[trade.address] || { classified: 0, seen: [], last: null };
+  if (prior.seen.includes(trade.signature)) {
+    return wallets;
+  }
+  const seen = prior.seen.length >= LIMITS.seenCap
+    ? prior.seen.slice(prior.seen.length - LIMITS.seenCap + 1).concat(trade.signature)
+    : prior.seen.concat(trade.signature);
+  const last = !prior.last || (trade.blockTime || 0) >= (prior.last.blockTime || 0) ? compactTrade(trade) : prior.last;
+  return {
+    ...wallets,
+    [trade.address]: { classified: Math.max(prior.classified, seen.length), seen, last },
+  };
+}
+
+function compactTrade(trade) {
+  return {
+    signature: trade.signature,
+    address: trade.address,
+    side: trade.side,
+    mint: trade.mint,
+    blockTime: trade.blockTime,
+    solLamports: Number.isFinite(trade.solLamports) ? trade.solLamports : null,
+    tokenRaw: typeof trade.tokenRaw === 'string' ? trade.tokenRaw : null,
+  };
+}
+
+function rankWallets(wallets) {
+  return Object.entries(wallets).map(([address, row]) => ({
+    address,
+    classified: row.classified,
+    seen: row.seen,
+    last: row.last,
+  })).sort((a, b) => b.classified - a.classified || a.address.localeCompare(b.address));
 }
 
 function propose(best) {
@@ -98,15 +188,18 @@ function propose(best) {
     return { order: null, note: 'menej ako 30 čistých obchodov jedného obchodníka' };
   }
   const last = best.last;
+  const entryPrice = priceOf(last);
+  const stopPrice = entryPrice == null ? null : entryPrice * (10_000 - LIMITS.stopBps) / 10_000;
   return {
     order: {
-      id: `${last.address}:${last.mint}:${last.side}:${last.signature}`,
-      wallet: last.address,
+      source: last.address,
       mint: last.mint,
       side: last.side,
       signature: last.signature,
       blockTime: last.blockTime,
       units: LIMITS.paperUnits,
+      entryPrice,
+      stopPrice,
     },
     note: `${last.side} po ${best.classified} čistých obchodoch`,
   };
@@ -120,39 +213,53 @@ function review(best, nowSeconds) {
   if (!last || (last.side !== 'buy' && last.side !== 'sell') || !last.mint) {
     return { veto: true, note: 'veto: smer nie je jasný' };
   }
-  if (!Number.isInteger(last.blockTime) || !Number.isInteger(nowSeconds) || nowSeconds - last.blockTime > LIMITS.maxEventAgeSec) {
+  if (tradeAge(last, nowSeconds) > LIMITS.maxEventAgeSec) {
     return { veto: true, note: 'veto: udalosť je staršia ako 60 s' };
   }
-  if (nowSeconds < last.blockTime) {
+  if (Number.isInteger(last.blockTime) && Number.isInteger(nowSeconds) && nowSeconds < last.blockTime) {
     return { veto: true, note: 'veto: čas udalosti je v budúcnosti' };
   }
   return { veto: false, note: 'bez veta' };
 }
 
-function govern(order, ledger, nowSeconds) {
+function tradeAge(last, nowSeconds) {
+  if (!last || !Number.isInteger(last.blockTime) || !Number.isInteger(nowSeconds)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return nowSeconds - last.blockTime;
+}
+
+function govern(order, ledger, nowSeconds, account) {
   if (!order) {
     return { approved: false, order: null, note: 'bez príkazu' };
+  }
+  if (!PUBLIC_ADDRESS.test(String(account || ''))) {
+    return { approved: false, order: null, note: 'pripoj verejnú adresu' };
   }
   if (ledger.halted) {
     return { approved: false, order: null, note: 'kill drží pozície' };
   }
-  if (ledger.orders.some((item) => item.id === order.id)) {
+  const id = orderId(account, order);
+  if (ledger.orders.some((item) => item.id === id)) {
     return { approved: false, order: null, note: 'príkaz už je zaznamenaný' };
+  }
+  if (order.side === 'sell' && !matchingPosition(ledger.positions, account, order)) {
+    return { approved: false, order: null, note: 'bez otvorenej pozície' };
   }
   if (order.side === 'buy' && ledger.positions.length >= LIMITS.maxOpenPositions) {
     return { approved: false, order: null, note: 'tri paper pozície sú plné' };
   }
   const day = utcDay(nowSeconds);
-  const today = ledger.orders.filter((item) => utcDay(item.recordedAt) === day).length;
+  const today = ledger.orders.filter((item) => item.side !== 'stop' && utcDay(item.recordedAt) === day).length;
   if (today >= LIMITS.maxOrdersPerDay) {
     return { approved: false, order: null, note: 'denný strop 10 paper príkazov' };
   }
-  return { approved: true, order, note: 'paper príkaz povolený' };
+  return { approved: true, order: { ...order, id, account }, note: 'paper príkaz povolený' };
 }
 
 function apply(risk, ledger, nowSeconds) {
   if (!risk.approved || !risk.order) {
-    return { ledger, note: risk.note };
+    return { ledger, note: risk.note, opened: false };
   }
   const order = { ...risk.order, recordedAt: nowSeconds, mode: 'paper' };
   const orders = ledger.orders.concat(order);
@@ -160,14 +267,17 @@ function apply(risk, ledger, nowSeconds) {
   if (order.side === 'buy') {
     positions = positions.concat({
       id: order.id,
-      wallet: order.wallet,
+      account: order.account,
+      source: order.source,
       mint: order.mint,
       units: order.units,
+      entryPrice: order.entryPrice,
+      stopPrice: order.stopPrice,
       openedAt: nowSeconds,
     });
   }
   if (order.side === 'sell') {
-    const index = positions.findIndex((position) => position.wallet === order.wallet && position.mint === order.mint);
+    const index = positions.findIndex((position) => matchingPosition([position], order.account, order));
     if (index >= 0) {
       positions = positions.slice(0, index).concat(positions.slice(index + 1));
     }
@@ -175,7 +285,65 @@ function apply(risk, ledger, nowSeconds) {
   return {
     ledger: { ...ledger, mode: 'paper', orders, positions },
     note: `paper ${order.side} zaznamenaný`,
+    opened: order.side === 'buy',
   };
+}
+
+function applyStops(ledger, trades, nowSeconds) {
+  let positions = ledger.positions;
+  let orders = ledger.orders;
+  let closed = false;
+  for (const trade of trades) {
+    const price = priceOf(trade);
+    if (price == null || typeof trade.mint !== 'string') {
+      continue;
+    }
+    const hitting = positions.filter((position) => position.mint === trade.mint && position.stopPrice != null && price <= position.stopPrice);
+    if (hitting.length === 0) {
+      continue;
+    }
+    closed = true;
+    const ids = new Set(hitting.map((position) => position.id));
+    positions = positions.filter((position) => !ids.has(position.id));
+    orders = orders.concat(hitting.map((position) => ({
+      id: `stop:${position.id}:${trade.signature}`,
+      account: position.account,
+      source: position.source,
+      mint: position.mint,
+      side: 'stop',
+      signature: trade.signature,
+      recordedAt: nowSeconds,
+      mode: 'paper',
+    })));
+  }
+  return { ledger: { ...ledger, positions, orders }, closed };
+}
+
+function noticeFor(closed, executed) {
+  if (closed) {
+    return 'Stop zatvoril paper pozíciu v knihe. Na sieť nič nešlo. Telefón nie je zapojený.';
+  }
+  if (executed.opened) {
+    return 'Paper buy je na našej adrese. Stop je 15 % pod vstupom. Telefón nie je zapojený.';
+  }
+  return 'Bez nového paper zápisu. Telefón nie je zapojený.';
+}
+
+function matchingPosition(positions, account, order) {
+  return positions.some((position) => position.account === account && position.source === order.source && position.mint === order.mint);
+}
+
+function orderId(account, order) {
+  return `${account}:${order.source}:${order.mint}:${order.side}:${order.signature}`;
+}
+
+function priceOf(trade) {
+  const sol = Number(trade && trade.solLamports);
+  const tokens = Number(trade && trade.tokenRaw);
+  if (!Number.isFinite(sol) || !Number.isFinite(tokens) || sol <= 0 || tokens <= 0) {
+    return null;
+  }
+  return sol / tokens;
 }
 
 function utcDay(seconds) {
@@ -189,8 +357,10 @@ module.exports = {
   LIMITS,
   emptyLedger,
   loadLedger,
+  rollCredits,
   haltLedger,
   releaseLedger,
   traderLadder,
+  focusAddress,
   runCycle,
 };

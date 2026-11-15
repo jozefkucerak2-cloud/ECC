@@ -3,7 +3,7 @@
 const { PUMP_PROGRAM_ID } = require('./config');
 const { discoverRecentWallets } = require('./discover');
 const { parseHeliusKey } = require('./helius-key');
-const { LIMITS, emptyLedger, haltLedger, loadLedger, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
+const { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, releaseLedger, rollCredits, runCycle, traderLadder } = require('./paper/cycle');
 
 const POLL_CREDITS = 31;
 const USABLE_CREDITS = 950_000;
@@ -13,13 +13,13 @@ const PROJECT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const BOOK_KEY = 'elite-desk-book';
 
 const ROLES = Object.freeze([
-  { id: 'reader', name: 'Čítač', detail: 'Číta posledných 30 podpisov programu pump a z pohybov zostatkov určí buy alebo sell.' },
+  { id: 'reader', name: 'Čítač', detail: 'Najprv špička programu, potom vlastné podpisy peňaženky, ktorá ešte nemá 30 čistých obchodov. Jedno kolo má strop 31 volaní.' },
   { id: 'analyst', name: 'Analytik', detail: 'Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.' },
   { id: 'skeptic', name: 'Skeptik', detail: 'Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.' },
   { id: 'ceo', name: 'CEO', detail: 'Návrh posunie ďalej. Limity nezmení a veto neprepíše.' },
-  { id: 'risk', name: 'Risk governor', detail: 'Pustí príkaz len do 3 otvorených pozícií a 10 príkazov za UTC deň.' },
-  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz do knihy. Na sieť nič neposiela.' },
-  { id: 'notifier', name: 'Hlásenie', detail: 'Posledný riadok je na tejto ploche. Telegram zatiaľ nie je zapojený.' },
+  { id: 'risk', name: 'Risk governor', detail: 'Pustí príkaz len na pripojenú verejnú adresu, do 3 pozícií a 10 príkazov za deň. Stop je 15 % pod vstupom.' },
+  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz na našu verejnú adresu. Na sieť nič neposiela.' },
+  { id: 'notifier', name: 'Hlásenie', detail: 'Samostatný riadok na tejto ploche. Telefón sa zapojí až po zvolení kanála.' },
   { id: 'wallet', name: 'Phantom', detail: 'Ostáva odpojená. Live podpis nie je v tomto behu.' },
 ]);
 
@@ -29,6 +29,7 @@ function createBrowserDesk(options = {}) {
   const onUpdate = options.onUpdate || (() => {});
   const auto = options.auto !== false;
   const usable = options.usableCredits ?? USABLE_CREDITS;
+  const now = options.now || Date.now;
   let keys = ['', '', ''];
   let projects = ['', '', ''];
   let wallet = null;
@@ -40,7 +41,7 @@ function createBrowserDesk(options = {}) {
   let last = null;
   let decision = ledger.halted ? 'kill drží pozície' : 'bez príkazu';
   let error = null;
-  const used = [0, 0, 0];
+  let used = ledger.credits.used.slice();
 
   function snapshot() {
     return {
@@ -55,6 +56,8 @@ function createBrowserDesk(options = {}) {
       decision,
       halted: ledger.halted,
       error,
+      notice: ledger.notice,
+      credits: creditRows(),
       limits: LIMITS,
       config: {
         ok: true,
@@ -66,9 +69,7 @@ function createBrowserDesk(options = {}) {
       roles: ROLES.map((role) => ({
         ...role,
         state: roleState(role.id, running, ledger.halted, wallet),
-        detail: role.id === 'wallet' && wallet
-          ? `${shortId(wallet)} · verejná adresa, súkromný kľúč sa neukladá`
-          : role.detail,
+        detail: roleDetail(role),
       })),
     };
   }
@@ -112,54 +113,132 @@ function createBrowserDesk(options = {}) {
     return snapshot();
   }
 
+  function roleDetail(role) {
+    if (role.id === 'wallet' && wallet) {
+      return `${shortId(wallet)} · verejná adresa, súkromný kľúč sa neukladá`;
+    }
+    if (role.id === 'notifier') {
+      return ledger.notice;
+    }
+    return role.detail;
+  }
+
+  function creditRows() {
+    return [0, 1, 2].map((index) => ({
+      slot: index + 1,
+      present: Boolean(keys[index]),
+      remaining: keys[index] ? Math.max(0, usable - used[index]) : null,
+    }));
+  }
+
+  function remember(slot, calls) {
+    const next = used.slice();
+    next[slot] += calls;
+    used = next;
+    ledger = {
+      ...ledger,
+      credits: { ...ledger.credits, used: next },
+    };
+    store(storage, ledger);
+  }
+
   async function tick(token = generation) {
     if (token !== generation) {
       return null;
     }
-    const slot = pickSlot();
-    if (slot < 0) {
+    ledger = { ...ledger, credits: rollCredits(ledger.credits, now(), MONTH_MS) };
+    used = ledger.credits.used.slice();
+    const tried = new Set();
+    let limited = false;
+    while (tried.size < 3) {
       if (token !== generation) {
         return null;
       }
-      running = false;
-      error = keys.some(Boolean) ? 'Mesačný strop kľúčov je plný.' : 'Chýba aspoň jeden Helius kľúč.';
-      return snapshot();
+      const slot = pickSlot(tried);
+      if (slot < 0) {
+        break;
+      }
+      tried.add(slot);
+      let calls = 0;
+      try {
+        const focus = focusAddress(ledger, Math.floor(now() / 1000));
+        const result = await discoverRecentWallets({
+          rpcUrl: `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(keys[slot])}`,
+          timeoutMs: 20_000,
+          maxRetries: 0,
+          retryBaseMs: 0,
+          signatureLimit: 30,
+          minCleanSample: 30,
+          programId: PUMP_PROGRAM_ID,
+        }, {
+          fetch: async (url, init) => {
+            calls += 1;
+            const response = await fetchImpl(url, init);
+            if (response && response.status === 429) {
+              const error = new Error('rpc http 429');
+              error.statusCode = 429;
+              throw error;
+            }
+            return response;
+          },
+          limit: 30,
+          budget: POLL_CREDITS,
+          address: focus ? focus.address : undefined,
+          seen: focus ? focus.seen : [],
+        });
+        remember(slot, calls);
+        if (token !== generation) {
+          return null;
+        }
+        const cycle = runCycle(ledger, result, Math.floor(now() / 1000), wallet);
+        ledger = { ...cycle.ledger, credits: ledger.credits };
+        decision = cycle.decision;
+        last = {
+          sample: result.sample,
+          walletCount: Array.isArray(result.wallets) ? result.wallets.length : 0,
+          fetchedSignatures: result.fetchedSignatures,
+          creditsRemaining: usable - used[slot],
+          focus: focus ? 'peňaženka' : 'program',
+        };
+        error = null;
+        store(storage, ledger);
+        return snapshot();
+      } catch (caught) {
+        remember(slot, calls || 1);
+        if (token !== generation) {
+          return null;
+        }
+        if (caught && (caught.statusCode === 429 || String(caught.message || '').includes('429'))) {
+          limited = true;
+          continue;
+        }
+        throw caught;
+      }
     }
-    const result = await discoverRecentWallets({
-      rpcUrl: `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(keys[slot])}`,
-      timeoutMs: 20_000,
-      maxRetries: 1,
-      retryBaseMs: 400,
-      signatureLimit: 30,
-      minCleanSample: 30,
-      programId: PUMP_PROGRAM_ID,
-    }, { fetch: fetchImpl, limit: 30 });
     if (token !== generation) {
       return null;
     }
-    used[slot] += 1 + result.fetchedSignatures;
-    const cycle = runCycle(ledger, result, Math.floor(Date.now() / 1000));
-    ledger = cycle.ledger;
-    decision = cycle.decision;
-    last = {
-      sample: result.sample,
-      walletCount: Array.isArray(result.wallets) ? result.wallets.length : 0,
-      fetchedSignatures: result.fetchedSignatures,
-      creditsRemaining: usable - used[slot],
-    };
-    error = null;
+    if (!keys.some(Boolean)) {
+      running = false;
+      error = 'Chýba aspoň jeden Helius kľúč.';
+    } else if (readySlots(new Set()).length === 0) {
+      running = false;
+      error = 'Mesačný strop kľúčov je plný.';
+    } else if (limited) {
+      error = 'Helius obmedzil tempo. Ďalší kľúč príde v ďalšom kole.';
+    }
     store(storage, ledger);
     return snapshot();
   }
 
-  function readySlots() {
+  function readySlots(skip) {
     return keys
-      .map((key, index) => (key && used[index] + POLL_CREDITS <= usable ? index : -1))
+      .map((key, index) => (key && !skip.has(index) && used[index] + POLL_CREDITS <= usable ? index : -1))
       .filter((index) => index >= 0);
   }
 
-  function pickSlot() {
-    const ready = readySlots();
+  function pickSlot(skip = new Set()) {
+    const ready = readySlots(skip);
     if (ready.length === 0) {
       return -1;
     }
@@ -208,7 +287,7 @@ function createBrowserDesk(options = {}) {
         return;
       }
       if (token === generation && running) {
-        schedule(paceMs(Math.max(1, readySlots().length)), token);
+        schedule(paceMs(Math.max(1, readySlots(new Set()).length)), token);
       }
     }, delay);
   }
@@ -278,9 +357,11 @@ function store(storage, ledger) {
     version: 1,
     mode: 'paper',
     halted: ledger.halted,
-    trades: ledger.trades,
+    wallets: ledger.wallets,
     orders: ledger.orders,
     positions: ledger.positions,
+    credits: ledger.credits,
+    notice: ledger.notice,
   };
   storage.setItem(BOOK_KEY, JSON.stringify(copy));
 }
@@ -292,18 +373,22 @@ function bookOf(ledger) {
     openPositions: ledger.positions.length,
     ordersToday: ledger.orders.filter((order) => dayOf(order.recordedAt) === day).length,
     ordersTotal: ledger.orders.length,
-    trades: ledger.trades.length,
+    trades: Object.values(ledger.wallets).reduce((sum, row) => sum + row.classified, 0),
     positions: ledger.positions.slice(-5).map((position) => ({
-      wallet: shortId(position.wallet),
+      wallet: shortId(position.account || position.wallet),
+      account: shortId(position.account),
+      source: shortId(position.source),
       mint: shortId(position.mint),
       units: position.units,
+      stop: position.stopPrice == null ? null : position.stopPrice,
     })),
     recentOrders: ledger.orders.slice(-5).map((order) => ({
       side: order.side,
-      wallet: shortId(order.wallet),
+      wallet: shortId(order.account || order.wallet),
+      source: shortId(order.source),
       mint: shortId(order.mint),
     })),
-    ladder: traderLadder(ledger.trades).map((row) => ({
+    ladder: traderLadder(ledger).map((row) => ({
       address: shortId(row.address),
       classified: row.classified,
       need: LIMITS.minTraderSamples,

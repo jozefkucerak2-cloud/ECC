@@ -105,6 +105,38 @@ test('failed signature is skipped and fee payers are counted', async () => {
   assert.ok(!requests.includes('sendTransaction'));
 });
 
+test('a wallet page skips a signature that was already counted', async () => {
+  const methods = [];
+  const addresses = [];
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    methods.push(body.method);
+    if (body.method === 'getSignaturesForAddress') {
+      addresses.push(body.params[0]);
+      return jsonResponse({
+        result: [
+          { signature: 'known', err: null },
+          { signature: 'fresh', err: null },
+        ],
+      });
+    }
+    assert.equal(body.params[0], 'fresh');
+    return jsonResponse({
+      result: { transaction: { message: { accountKeys: ['WalletA'] } } },
+    });
+  };
+  const found = await discoverRecentWallets(loadConfig(baseEnv()), {
+    fetch: fetchImpl,
+    address: 'WalletA',
+    seen: ['known'],
+    budget: 31,
+  });
+  assert.deepEqual(addresses, ['WalletA']);
+  assert.deepEqual(methods, ['getSignaturesForAddress', 'getTransaction']);
+  assert.equal(found.calls, 2);
+  assert.equal(found.trades[0].signature, 'fresh');
+});
+
 test('fee payer accepts a legacy string account key', () => {
   assert.equal(feePayer({
     transaction: { message: { accountKeys: ['LegacyPayer'] } },

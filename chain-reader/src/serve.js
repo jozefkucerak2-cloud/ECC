@@ -7,19 +7,19 @@ const path = require('node:path');
 const { loadConfig } = require('./config');
 const { createHeliusPool, watchPool } = require('./helius');
 const { parseHeliusKey } = require('./helius-key');
-const { LIMITS, emptyLedger, haltLedger, loadLedger, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
+const { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
 
 const DESK_FILE = path.join(__dirname, '..', 'desk', 'index.html');
 const ENGINE_FILE = path.join(__dirname, '..', 'desk', 'engine.js');
 
 const ROLES = Object.freeze([
-  { id: 'reader', name: 'Čítač', detail: 'Číta posledných 30 podpisov programu pump a z pohybov zostatkov určí buy alebo sell.' },
+  { id: 'reader', name: 'Čítač', detail: 'Najprv špička programu, potom vlastné podpisy peňaženky, ktorá ešte nemá 30 čistých obchodov. Jedno kolo má strop 31 volaní.' },
   { id: 'analyst', name: 'Analytik', detail: 'Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.' },
   { id: 'skeptic', name: 'Skeptik', detail: 'Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.' },
   { id: 'ceo', name: 'CEO', detail: 'Návrh posunie ďalej. Limity nezmení a veto neprepíše.' },
-  { id: 'risk', name: 'Risk governor', detail: 'Pustí príkaz len do 3 otvorených pozícií a 10 príkazov za UTC deň.' },
-  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz do knihy. Na sieť nič neposiela.' },
-  { id: 'notifier', name: 'Hlásenie', detail: 'Posledný riadok je na tejto ploche. Telegram zatiaľ nie je zapojený.' },
+  { id: 'risk', name: 'Risk governor', detail: 'Pustí príkaz len na pripojenú verejnú adresu, do 3 pozícií a 10 príkazov za deň. Stop je 15 % pod vstupom.' },
+  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz na našu verejnú adresu. Na sieť nič neposiela.' },
+  { id: 'notifier', name: 'Hlásenie', detail: 'Samostatný riadok na tejto ploche. Telefón sa zapojí až po zvolení kanála.' },
   { id: 'wallet', name: 'Phantom', detail: 'Ostáva odpojená. Live podpis nie je v tomto behu.' },
 ]);
 
@@ -103,6 +103,8 @@ function createDesk(options = {}) {
       decision: state.decision,
       halted: state.halted,
       error: state.error,
+      notice: readPaper(paperFile).notice,
+      credits: state.last && state.last.credits ? state.last.credits : [],
       limits: LIMITS,
       config: publicConfig(current),
       book: bookOf(paperFile),
@@ -159,11 +161,15 @@ function createDesk(options = {}) {
     state.error = null;
     state.loop = watch(pool, {
       signal: controller.signal,
+      discoverOptions() {
+        const focus = focusAddress(readPaper(paperFile), Math.floor(Date.now() / 1000));
+        return focus ? { address: focus.address, seen: focus.seen } : {};
+      },
       onResult(result) {
         if (state.token !== token || controller.signal.aborted) {
           return;
         }
-        const cycle = runCycle(readPaper(paperFile), result, Math.floor(Date.now() / 1000));
+        const cycle = runCycle(readPaper(paperFile), result, Math.floor(Date.now() / 1000), state.wallet);
         writePaper(paperFile, cycle.ledger);
         state.last = publicResult(result);
         state.events = cycle.events;
@@ -342,18 +348,22 @@ function bookOf(file) {
     openPositions: ledger.positions.length,
     ordersToday: ledger.orders.filter((order) => dayOf(order.recordedAt) === day).length,
     ordersTotal: ledger.orders.length,
-    trades: ledger.trades.length,
+    trades: Object.values(ledger.wallets).reduce((sum, row) => sum + row.classified, 0),
     positions: ledger.positions.slice(-5).map((position) => ({
-      wallet: shortId(position.wallet),
+      wallet: shortId(position.account || position.wallet),
+      account: shortId(position.account),
+      source: shortId(position.source),
       mint: shortId(position.mint),
       units: position.units,
+      stop: position.stopPrice == null ? null : position.stopPrice,
     })),
     recentOrders: ledger.orders.slice(-5).map((order) => ({
       side: order.side,
-      wallet: shortId(order.wallet),
+      wallet: shortId(order.account || order.wallet),
+      source: shortId(order.source),
       mint: shortId(order.mint),
     })),
-    ladder: traderLadder(ledger.trades).map((row) => ({
+    ladder: traderLadder(ledger).map((row) => ({
       address: shortId(row.address),
       classified: row.classified,
       need: LIMITS.minTraderSamples,
@@ -458,6 +468,13 @@ function publicResult(result) {
     creditsRemaining: totals ? totals.creditsRemaining : null,
     creditsUsed: totals ? totals.creditsUsed : null,
     calls: totals ? totals.calls : null,
+    credits: Array.isArray(result && result.usage && result.usage.keys)
+      ? result.usage.keys.map((key, index) => ({
+        slot: index + 1,
+        present: true,
+        remaining: key.creditsRemaining,
+      }))
+      : [],
   };
 }
 

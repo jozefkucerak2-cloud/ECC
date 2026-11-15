@@ -70,6 +70,8 @@ test('a 429 on the first key uses the second key', async () => {
   assert.deepEqual(seen, ['a', 'b']);
   const report = pool.status();
   assert.equal(report.keys[0].rateLimits, 1);
+  assert.equal(report.keys[0].calls, 1);
+  assert.equal(report.keys[0].creditsUsed, 1);
   assert.equal(report.keys[1].calls, 1);
   assert.equal(report.keys[1].creditsUsed, 1);
   assert.equal(JSON.stringify(report).includes(KEY_A), false);
