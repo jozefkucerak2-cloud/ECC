@@ -13,82 +13,102 @@
       --mute: #7a7468;
       --line: rgba(22, 20, 15, 0.12);
       --live: #d6ff4a;
-      --wait: #e7b15a;
       --miss: #a89880;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; background: var(--black); color: var(--bone); }
-    body {
-      font-family: "Avenir Next", "Segoe UI", sans-serif;
-      letter-spacing: 0;
-    }
+    body { font-family: "Avenir Next", "Segoe UI", sans-serif; }
     .shell {
       min-height: 100vh;
       display: grid;
-      grid-template-columns: minmax(300px, 44vw) 1fr;
+      grid-template-columns: minmax(320px, 42vw) 1fr;
     }
     .stage {
       background: var(--paper);
       color: var(--ink);
-      padding: 36px 40px 32px;
+      padding: 28px 32px 24px;
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
-      min-height: 100vh;
+      gap: 18px;
     }
     .kicker {
       margin: 0;
       font-size: 12px;
-      letter-spacing: 0.22em;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
       color: var(--mute);
     }
+    .title-row { display: flex; align-items: center; gap: 16px; }
     h1 {
-      margin: 10px 0 0;
-      font-family: Palatino, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+      margin: 0;
+      font-family: Palatino, "Iowan Old Style", Georgia, serif;
       font-weight: 500;
-      font-size: clamp(64px, 8vw, 112px);
+      font-size: 64px;
       line-height: 0.86;
       letter-spacing: -0.04em;
     }
     .mark {
-      width: min(280px, 70%);
-      aspect-ratio: 1;
-      margin: 28px 0;
+      width: 64px;
+      height: 64px;
       background: var(--ink);
-      border-radius: 36px;
+      border-radius: 16px;
       display: grid;
       place-items: center;
-      position: relative;
+      flex: none;
     }
     .eye {
-      width: 62%;
-      height: 18px;
+      width: 36px;
+      height: 8px;
       background: var(--bone);
       border-radius: 999px;
-      overflow: hidden;
       display: grid;
       place-items: center;
+      overflow: hidden;
     }
     .eye span {
-      width: 18px;
-      height: 18px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: var(--ink);
       animation: look 4.8s ease-in-out infinite;
     }
     .mark.live .eye span { background: var(--live); }
     @keyframes look {
-      0%, 100% { transform: translateX(-28px); }
-      50% { transform: translateX(28px); }
+      0%, 100% { transform: translateX(-10px); }
+      50% { transform: translateX(10px); }
     }
-    .lede {
-      max-width: 36ch;
+    .lede { margin: 0; font-size: 16px; line-height: 1.45; max-width: 42ch; }
+    .steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; }
+    .steps li {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      align-items: start;
+    }
+    .num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--bone);
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+    }
+    .steps p { margin: 0 0 6px; font-size: 15px; line-height: 1.4; }
+    pre {
       margin: 0;
-      font-size: 18px;
-      line-height: 1.45;
+      padding: 10px 12px;
+      background: var(--ink);
+      color: var(--bone);
+      border-radius: 12px;
+      font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
-    .actions { display: flex; gap: 10px; margin-top: 28px; flex-wrap: wrap; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
     button {
       appearance: none;
       border: 0;
@@ -100,42 +120,37 @@
       border-radius: 999px;
       cursor: pointer;
     }
-    button.ghost {
-      background: transparent;
-      color: var(--ink);
-      box-shadow: inset 0 0 0 1px var(--line);
-    }
+    button.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
     button:disabled { opacity: 0.45; cursor: default; }
-    .panel {
-      padding: 36px 40px 28px;
-      display: flex;
-      flex-direction: column;
-      gap: 22px;
+    .banner {
+      margin: 0;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #efe6d4;
+      font-size: 14px;
+      line-height: 1.45;
     }
-    .panel-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 16px;
-    }
-    .panel-head p { margin: 0; color: var(--mute); font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; }
-    .mode {
-      font-family: Palatino, Georgia, serif;
-      font-size: 28px;
-    }
-    ol { list-style: none; margin: 0; padding: 0; }
-    li {
+    .panel { padding: 28px 32px 32px; display: flex; flex-direction: column; gap: 22px; }
+    .panel-head, .block-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+    .panel-head p, .block-head p { margin: 0; color: var(--mute); font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; }
+    .mode { font-family: Palatino, Georgia, serif; font-size: 28px; }
+    .limits, .meters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .meter { border-top: 1px solid rgba(243, 236, 223, 0.16); padding-top: 10px; }
+    .meter b { display: block; font-family: Palatino, Georgia, serif; font-size: 28px; font-weight: 500; }
+    .meter small { color: var(--mute); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+    ol.roles { list-style: none; margin: 0; padding: 0; }
+    ol.roles li {
       display: grid;
       grid-template-columns: 1fr auto;
-      gap: 8px 18px;
-      padding: 14px 0;
+      gap: 4px 16px;
+      padding: 12px 0;
       border-top: 1px solid rgba(243, 236, 223, 0.14);
     }
-    li strong { font-weight: 600; font-size: 18px; }
-    li span.detail { grid-column: 1; color: var(--mute); font-size: 13px; }
+    ol.roles strong { font-size: 16px; font-weight: 600; }
+    .detail { grid-column: 1; color: #c8bfb0; font-size: 13px; line-height: 1.4; }
     .pill {
-      align-self: center;
-      font-size: 12px;
+      align-self: start;
+      font-size: 11px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       padding: 6px 10px;
@@ -144,45 +159,31 @@
       background: var(--miss);
     }
     .pill.bezi, .pill.pripraveny { background: var(--live); }
-    .pill.vypnuty, .pill.nepripojena, .pill.chyba { background: transparent; color: var(--miss); box-shadow: inset 0 0 0 1px rgba(168, 152, 128, 0.5); }
-    .meters {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
+    .pill.vypnuty, .pill.nepripojena, .pill.chyba, .pill.drzi-pozicie {
+      background: transparent;
+      color: var(--miss);
+      box-shadow: inset 0 0 0 1px rgba(168, 152, 128, 0.5);
+    }
+    .rows { margin: 0; padding: 0; list-style: none; }
+    .rows li {
+      display: flex;
+      justify-content: space-between;
       gap: 12px;
-    }
-    .meter {
+      padding: 8px 0;
       border-top: 1px solid rgba(243, 236, 223, 0.14);
-      padding-top: 12px;
+      font-size: 14px;
     }
-    .meter b {
-      display: block;
-      font-family: Palatino, Georgia, serif;
-      font-size: 32px;
-      font-weight: 500;
-    }
-    .meter small { color: var(--mute); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
-    .keys { display: flex; gap: 8px; }
-    .key {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      font-size: 12px;
-      color: var(--mute);
-      box-shadow: inset 0 0 0 1px rgba(243, 236, 223, 0.2);
-    }
-    .key.on { background: var(--live); color: var(--black); box-shadow: none; }
-    .note { color: var(--mute); font-size: 14px; line-height: 1.5; max-width: 62ch; }
-    code {
-      font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
-      font-size: 13px;
-      color: var(--bone);
-    }
-    @media (max-width: 860px) {
+    .rows span { color: var(--mute); }
+    .empty { margin: 0; color: #c8bfb0; font-size: 14px; }
+    .keyline { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid rgba(243, 236, 223, 0.14); font-size: 14px; }
+    .keyline b { font-weight: 600; }
+    .off { color: var(--miss); }
+    .on { color: var(--live); }
+    @media (max-width: 900px) {
       .shell { grid-template-columns: 1fr; }
-      .stage, .panel { min-height: auto; padding: 28px 22px; }
-      .meters { grid-template-columns: 1fr; }
+      .stage, .panel { padding: 22px 18px 28px; }
+      .limits, .meters { grid-template-columns: 1fr 1fr; }
+      h1 { font-size: 52px; }
     }
     @media (prefers-reduced-motion: reduce) {
       .eye span { animation: none; }
@@ -192,61 +193,125 @@
 <body>
   <main class="shell">
     <section class="stage">
-      <div>
-        <p class="kicker">Paper konzola</p>
-        <h1>Elite</h1>
+      <div class="title-row">
         <div class="mark" id="mark" aria-hidden="true"><div class="eye"><span></span></div></div>
-        <p class="lede" id="lede">Paper tím číta reťaz a zapisuje len skúšobný príkaz. Phantom nie je pripojený.</p>
-        <div class="actions">
-          <button id="start" type="button">Spustiť paper</button>
-          <button id="stop" class="ghost" type="button">Pauza</button>
-          <button id="kill" class="ghost" type="button">Kill</button>
+        <div>
+          <p class="kicker">Paper konzola</p>
+          <h1>Elite</h1>
         </div>
       </div>
-      <p class="note" id="hint" style="color:#6f6a60"></p>
+      <p class="lede">Toto je paper tím. Číta verejné pump obchody a zapisuje len skúšobný príkaz. Phantom ostáva odpojená a na sieť sa nič neposiela.</p>
+      <ol class="steps">
+        <li>
+          <span class="num">1</span>
+          <div>
+            <p>Otvor terminál v priečinku ECC.</p>
+          </div>
+        </li>
+        <li>
+          <span class="num">2</span>
+          <div>
+            <p>Vlož kľúče do shellu. Do tejto stránky sa nevkladajú.</p>
+            <pre id="exports">export HELIUS_API_KEY_1='tvoj-kľúč'
+export HELIUS_API_KEY_2='tvoj-kľúč'
+export HELIUS_API_KEY_3='tvoj-kľúč'
+export HELIUS_PROJECT_ID_1='uuid-projektu-1'
+export HELIUS_PROJECT_ID_2='uuid-projektu-2'
+export HELIUS_PROJECT_ID_3='uuid-projektu-3'</pre>
+          </div>
+        </li>
+        <li>
+          <span class="num">3</span>
+          <div>
+            <p>Spusti proces a nechaj toto okno otvorené.</p>
+            <pre>node chain-reader/src/serve.js</pre>
+          </div>
+        </li>
+        <li>
+          <span class="num">4</span>
+          <div>
+            <p>Otvor lokálnu adresu a stlač Spustiť paper.</p>
+            <pre>http://127.0.0.1:8787</pre>
+          </div>
+        </li>
+      </ol>
+      <div class="actions">
+        <button id="start" type="button">Spustiť paper</button>
+        <button id="stop" class="ghost" type="button">Pauza</button>
+        <button id="kill" class="ghost" type="button">Kill</button>
+      </div>
+      <p class="banner" id="banner">Kontrolujem, či tento proces počúva.</p>
     </section>
     <section class="panel">
       <div class="panel-head">
-        <p>Tím</p>
+        <p>Režim</p>
         <div class="mode" id="mode">PAPER</div>
       </div>
-      <ol id="roles">
-        <li><strong>Čítač</strong><span class="pill pripraveny">pripravený</span><span class="detail">Helius, podpisy a smer z pohybov zostatkov</span></li>
-        <li><strong>Analytik</strong><span class="pill pripraveny">pripravený</span><span class="detail">Návrh až po 30 čistých obchodoch jedného obchodníka</span></li>
-        <li><strong>Skeptik</strong><span class="pill pripraveny">pripravený</span><span class="detail">Veto platí, CEO ho neprepíše</span></li>
-        <li><strong>CEO</strong><span class="pill pripraveny">pripravený</span><span class="detail">Limity nemení</span></li>
-        <li><strong>Risk governor</strong><span class="pill pripraveny">pripravený</span><span class="detail">Posledné slovo, paper stropy</span></li>
-        <li><strong>Executor</strong><span class="pill pripraveny">pripravený</span><span class="detail">Zapíše paper príkaz, na sieť nič neposiela</span></li>
-        <li><strong>Hlásenie</strong><span class="pill pripraveny">pripravený</span><span class="detail">Riadok na tejto ploche</span></li>
-        <li><strong>Phantom</strong><span class="pill nepripojena">nepripojená</span><span class="detail">Peňaženka nie je pripojená</span></li>
-      </ol>
-      <p class="note" id="decision">bez príkazu</p>
-      <div class="meters">
-        <div class="meter"><small>Vzorka</small><b id="sample">—</b></div>
-        <div class="meter"><small>Peňaženky</small><b id="wallets">—</b></div>
-        <div class="meter"><small>Kredity</small><b id="credits">—</b></div>
+      <div class="limits" id="limits">
+        <div class="meter"><small>Čistá vzorka</small><b id="lim-sample">30</b></div>
+        <div class="meter"><small>Sviežosť</small><b id="lim-age">60 s</b></div>
+        <div class="meter"><small>Pozície</small><b id="lim-pos">0 / 3</b></div>
+        <div class="meter"><small>Príkazy dnes</small><b id="lim-day">0 / 10</b></div>
       </div>
       <div>
-        <p class="kicker" style="color:#7a7468">Helius kľúče v prostredí</p>
-        <div class="keys" id="keys"></div>
+        <div class="block-head"><p>Tím</p><p id="decision">bez príkazu</p></div>
+        <ol class="roles" id="roles">
+          <li><strong>Čítač</strong><span class="pill pripraveny">pripravený</span><span class="detail">Číta posledných 30 podpisov programu pump a z pohybov zostatkov určí buy alebo sell.</span></li>
+          <li><strong>Analytik</strong><span class="pill pripraveny">pripravený</span><span class="detail">Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.</span></li>
+          <li><strong>Skeptik</strong><span class="pill pripraveny">pripravený</span><span class="detail">Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.</span></li>
+          <li><strong>CEO</strong><span class="pill pripraveny">pripravený</span><span class="detail">Návrh posunie ďalej. Limity nezmení a veto neprepíše.</span></li>
+          <li><strong>Risk governor</strong><span class="pill pripraveny">pripravený</span><span class="detail">Pustí príkaz len do 3 otvorených pozícií a 10 príkazov za UTC deň.</span></li>
+          <li><strong>Executor</strong><span class="pill pripraveny">pripravený</span><span class="detail">Zapíše paper príkaz do knihy. Na sieť nič neposiela.</span></li>
+          <li><strong>Hlásenie</strong><span class="pill pripraveny">pripravený</span><span class="detail">Posledný riadok je na tejto ploche. Telegram zatiaľ nie je zapojený.</span></li>
+          <li><strong>Phantom</strong><span class="pill nepripojena">nepripojená</span><span class="detail">Ostáva odpojená. Live podpis nie je v tomto behu.</span></li>
+        </ol>
       </div>
-      <p class="note">Kľúče patria do shellu, nie do tejto stránky. <code>export HELIUS_API_KEY_1</code>, <code>HELIUS_API_KEY_2</code>, <code>HELIUS_API_KEY_3</code> a potom <code>node chain-reader/src/serve.js</code>. UUID projektu je <code>HELIUS_PROJECT_ID_1</code> až <code>3</code>.</p>
+      <div>
+        <div class="block-head"><p>Kniha</p><p id="book-count">0 pozícií, 0 príkazov</p></div>
+        <p class="empty" id="book-empty">Zatiaľ žiadna paper pozícia. Prvý zápis príde až po 30 čistých obchodoch jednej peňaženky.</p>
+        <ul class="rows" id="positions"></ul>
+        <ul class="rows" id="orders"></ul>
+      </div>
+      <div>
+        <p class="kicker">Posledné kolo</p>
+        <div class="meters">
+          <div class="meter"><small>Vzorka</small><b id="sample">čaká</b></div>
+          <div class="meter"><small>Peňaženky</small><b id="wallets">0</b></div>
+          <div class="meter"><small>Podpisy</small><b id="fetched">0</b></div>
+          <div class="meter"><small>Kredity</small><b id="credits">čaká</b></div>
+        </div>
+      </div>
+      <div>
+        <p class="kicker">Helius kľúče v prostredí procesu</p>
+        <div id="keys">
+          <div class="keyline"><b>Kľúč 1</b><span class="off">čaká na proces</span></div>
+          <div class="keyline"><b>Kľúč 2</b><span class="off">čaká na proces</span></div>
+          <div class="keyline"><b>Kľúč 3</b><span class="off">čaká na proces</span></div>
+        </div>
+        <p class="empty" id="program">Program pump 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P. Strana sa berie z pohybu SOL a tokenu.</p>
+      </div>
     </section>
   </main>
   <script>
     const roles = document.getElementById('roles');
     const keys = document.getElementById('keys');
     const mark = document.getElementById('mark');
-    const hint = document.getElementById('hint');
+    const banner = document.getElementById('banner');
     const start = document.getElementById('start');
     const stop = document.getElementById('stop');
     const kill = document.getElementById('kill');
+    let online = false;
 
     function pillClass(state) {
-      return String(state || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return String(state || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-');
+    }
+
+    function fill(node, text) {
+      node.textContent = text;
     }
 
     function paint(data) {
+      online = true;
       roles.replaceChildren();
       data.roles.forEach((role) => {
         const item = document.createElement('li');
@@ -261,23 +326,81 @@
         item.append(name, pill, detail);
         roles.append(item);
       });
-      keys.replaceChildren();
-      data.keys.forEach((on, index) => {
-        const dot = document.createElement('div');
-        dot.className = on ? 'key on' : 'key';
-        dot.textContent = String(index + 1);
-        keys.append(dot);
+      const book = data.book || {};
+      const limits = data.limits || {};
+      fill(document.getElementById('lim-sample'), String(limits.minTraderSamples || 30));
+      fill(document.getElementById('lim-age'), (limits.maxEventAgeSec || 60) + ' s');
+      fill(document.getElementById('lim-pos'), (book.openPositions || 0) + ' / ' + (limits.maxOpenPositions || 3));
+      fill(document.getElementById('lim-day'), (book.ordersToday || 0) + ' / ' + (limits.maxOrdersPerDay || 10));
+      fill(document.getElementById('book-count'), (book.openPositions || 0) + ' pozícií, ' + (book.ordersTotal || 0) + ' príkazov');
+      const positions = document.getElementById('positions');
+      const orders = document.getElementById('orders');
+      positions.replaceChildren();
+      orders.replaceChildren();
+      (book.positions || []).forEach((position) => {
+        const row = document.createElement('li');
+        row.textContent = position.wallet + ' · ' + position.mint + ' · ' + position.units;
+        positions.append(row);
       });
-      mark.classList.toggle('live', Boolean(data.running));
+      (book.recentOrders || []).forEach((order) => {
+        const row = document.createElement('li');
+        const side = document.createElement('b');
+        side.textContent = order.side;
+        const rest = document.createElement('span');
+        rest.textContent = order.wallet + ' · ' + order.mint;
+        row.append(side, rest);
+        orders.append(row);
+      });
+      document.getElementById('book-empty').hidden = (book.openPositions || 0) + (book.ordersTotal || 0) > 0;
       const last = data.last || {};
-      document.getElementById('sample').textContent = last.sample || '—';
-      document.getElementById('wallets').textContent = last.walletCount == null ? '—' : String(last.walletCount);
-      document.getElementById('credits').textContent = last.creditsRemaining == null ? '—' : String(last.creditsRemaining);
-      document.getElementById('decision').textContent = data.decision || 'bez príkazu';
-      hint.textContent = data.error || (data.running ? 'Paper beh beží v tomto procese.' : 'Pripravený. Spustenie vezme kľúče len z prostredia.');
+      fill(document.getElementById('sample'), last.sample || 'čaká');
+      fill(document.getElementById('wallets'), last.walletCount == null ? '0' : String(last.walletCount));
+      fill(document.getElementById('fetched'), last.fetchedSignatures == null ? '0' : String(last.fetchedSignatures));
+      fill(document.getElementById('credits'), last.creditsRemaining == null ? 'čaká' : String(last.creditsRemaining));
+      fill(document.getElementById('decision'), data.decision || 'bez príkazu');
+      keys.replaceChildren();
+      const projects = data.projectIds || [false, false, false];
+      (data.keys || [false, false, false]).forEach((on, index) => {
+        const row = document.createElement('div');
+        row.className = 'keyline';
+        const name = document.createElement('b');
+        name.textContent = 'Kľúč ' + (index + 1);
+        const state = document.createElement('span');
+        state.className = on ? 'on' : 'off';
+        state.textContent = on ? 'v prostredí' : 'chýba';
+        state.textContent += projects[index] ? ' · projekt zadaný' : ' · projekt chýba';
+        row.append(name, state);
+        keys.append(row);
+      });
+      const config = data.config || {};
+      const program = document.getElementById('program');
+      if (config.ok) {
+        program.textContent = 'Program ' + config.programId + '. Strana ' + config.signatureLimit + ', čistá vzorka ' + config.minCleanSample + '.';
+      } else if (config.error) {
+        program.textContent = config.error;
+      }
+      mark.classList.toggle('live', Boolean(data.running));
+      fill(document.getElementById('mode'), data.halted ? 'PAPER · KILL' : 'PAPER');
+      if (data.error) {
+        banner.textContent = data.error;
+      } else if (data.running) {
+        banner.textContent = 'Paper beh beží v tomto procese. Pauza počká, kým sa kolo skončí.';
+      } else if ((data.keys || []).some(Boolean)) {
+        banner.textContent = 'Proces počúva a kľúč je v prostredí. Stlač Spustiť paper.';
+      } else {
+        banner.textContent = 'Proces počúva. Kľúče v ňom chýbajú. Vlož exporty v tom istom termináli a spusti príkaz znova.';
+      }
       start.disabled = Boolean(data.running);
       stop.disabled = !data.running;
       kill.disabled = false;
+    }
+
+    function offline() {
+      online = false;
+      banner.textContent = 'Táto adresa proces nespúšťa. Na svojom stroji urob kroky 1 až 4 vľavo a až potom stlač Spustiť paper na http://127.0.0.1:8787.';
+      start.disabled = true;
+      stop.disabled = true;
+      kill.disabled = true;
     }
 
     async function refresh() {
@@ -288,21 +411,19 @@
 
     async function post(path) {
       const response = await fetch(path, { method: 'POST' });
-      const body = await response.json();
+      const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'požiadavka zlyhala');
       paint(body);
     }
 
-    start.addEventListener('click', () => post('/api/start').catch((error) => { hint.textContent = error.message; }));
-    stop.addEventListener('click', () => post('/api/stop').catch((error) => { hint.textContent = error.message; }));
-    kill.addEventListener('click', () => post('/api/kill').catch((error) => { hint.textContent = error.message; }));
-    refresh().catch(() => {
-      hint.textContent = 'Táto stránka je obraz. Beh spustíš na svojom stroji príkazom node chain-reader/src/serve.js';
-      start.disabled = true;
-      stop.disabled = true;
-      kill.disabled = true;
+    start.addEventListener('click', () => {
+      if (!online) return;
+      post('/api/start').catch((error) => { banner.textContent = error.message; });
     });
-    setInterval(() => { refresh().catch(() => {}); }, 2000);
+    stop.addEventListener('click', () => post('/api/stop').catch((error) => { banner.textContent = error.message; }));
+    kill.addEventListener('click', () => post('/api/kill').catch((error) => { banner.textContent = error.message; }));
+    refresh().catch(offline);
+    setInterval(() => { refresh().catch(() => { if (!online) offline(); }); }, 2000);
   </script>
 </body>
 </html>

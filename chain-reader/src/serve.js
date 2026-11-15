@@ -6,19 +6,19 @@ const path = require('node:path');
 
 const { loadConfig } = require('./config');
 const { createHeliusPool, watchPool } = require('./helius');
-const { emptyLedger, haltLedger, loadLedger, runCycle } = require('./paper/cycle');
+const { LIMITS, emptyLedger, haltLedger, loadLedger, runCycle } = require('./paper/cycle');
 
 const DESK_FILE = path.join(__dirname, '..', 'desk', 'index.html');
 
 const ROLES = Object.freeze([
-  { id: 'reader', name: 'Čítač', detail: 'Helius, podpisy a smer z pohybov zostatkov' },
-  { id: 'analyst', name: 'Analytik', detail: 'Návrh až po 30 čistých obchodoch jedného obchodníka' },
-  { id: 'skeptic', name: 'Skeptik', detail: 'Veto platí, CEO ho neprepíše' },
-  { id: 'ceo', name: 'CEO', detail: 'Limity nemení' },
-  { id: 'risk', name: 'Risk governor', detail: 'Posledné slovo, paper stropy' },
-  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz, na sieť nič neposiela' },
-  { id: 'notifier', name: 'Hlásenie', detail: 'Riadok na tejto ploche' },
-  { id: 'wallet', name: 'Phantom', detail: 'Peňaženka nie je pripojená' },
+  { id: 'reader', name: 'Čítač', detail: 'Číta posledných 30 podpisov programu pump a z pohybov zostatkov určí buy alebo sell.' },
+  { id: 'analyst', name: 'Analytik', detail: 'Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.' },
+  { id: 'skeptic', name: 'Skeptik', detail: 'Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.' },
+  { id: 'ceo', name: 'CEO', detail: 'Návrh posunie ďalej. Limity nezmení a veto neprepíše.' },
+  { id: 'risk', name: 'Risk governor', detail: 'Pustí príkaz len do 3 otvorených pozícií a 10 príkazov za UTC deň.' },
+  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz do knihy. Na sieť nič neposiela.' },
+  { id: 'notifier', name: 'Hlásenie', detail: 'Posledný riadok je na tejto ploche. Telegram zatiaľ nie je zapojený.' },
+  { id: 'wallet', name: 'Phantom', detail: 'Ostáva odpojená. Live podpis nie je v tomto behu.' },
 ]);
 
 function publicError(error, env) {
@@ -54,6 +54,7 @@ function createDesk(options = {}) {
     last: null,
     error: null,
     decision: 'bez príkazu',
+    events: [],
     halted: false,
     controller: null,
     loop: null,
@@ -70,9 +71,13 @@ function createDesk(options = {}) {
       decision: state.decision,
       halted: state.halted,
       error: state.error,
+      limits: LIMITS,
+      config: publicConfig(env),
+      book: bookOf(paperFile),
       roles: ROLES.map((role) => ({
         ...role,
         state: roleState(role.id, state.running, state.halted),
+        detail: eventNote(state.events, role.id) || role.detail,
       })),
     };
   }
@@ -128,6 +133,7 @@ function createDesk(options = {}) {
         const cycle = runCycle(readPaper(paperFile), result, Math.floor(Date.now() / 1000));
         writePaper(paperFile, cycle.ledger);
         state.last = publicResult(result);
+        state.events = cycle.events;
         state.decision = cycle.decision;
         state.halted = cycle.ledger.halted;
       },
@@ -189,6 +195,73 @@ function writePaper(file, ledger) {
   const temporary = `${file}.tmp`;
   fs.writeFileSync(temporary, JSON.stringify(ledger));
   fs.renameSync(temporary, file);
+}
+
+function eventNote(events, roleId) {
+  const match = (events || []).find((event) => event.role === roleId);
+  return match && match.note ? match.note : '';
+}
+
+function publicConfig(env) {
+  try {
+    const config = loadConfig(env);
+    return {
+      ok: true,
+      signatureLimit: config.signatureLimit,
+      minCleanSample: config.minCleanSample,
+      programId: config.programId,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      signatureLimit: null,
+      minCleanSample: null,
+      programId: null,
+      error: publicError(error, env),
+    };
+  }
+}
+
+function bookOf(file) {
+  let ledger;
+  try {
+    ledger = readPaper(file);
+  } catch {
+    ledger = emptyLedger();
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  return {
+    halted: ledger.halted,
+    openPositions: ledger.positions.length,
+    ordersToday: ledger.orders.filter((order) => dayOf(order.recordedAt) === day).length,
+    ordersTotal: ledger.orders.length,
+    trades: ledger.trades.length,
+    positions: ledger.positions.slice(-5).map((position) => ({
+      wallet: shortId(position.wallet),
+      mint: shortId(position.mint),
+      units: position.units,
+    })),
+    recentOrders: ledger.orders.slice(-5).map((order) => ({
+      side: order.side,
+      wallet: shortId(order.wallet),
+      mint: shortId(order.mint),
+    })),
+  };
+}
+
+function dayOf(seconds) {
+  if (!Number.isInteger(seconds)) {
+    return '';
+  }
+  return new Date(seconds * 1000).toISOString().slice(0, 10);
+}
+
+function shortId(value) {
+  const text = String(value || '');
+  if (text.length <= 12) {
+    return text;
+  }
+  return `${text.slice(0, 4)}…${text.slice(-4)}`;
 }
 
 function roleState(id, running, halted) {

@@ -34,7 +34,11 @@ test('desk status names keys without revealing them', async () => {
 });
 
 test('start without keys is refused and the page is served', async () => {
-  const desk = createDesk({ env: { ELITE_SOLANA_RPC_URL: 'https://rpc.example' } });
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const desk = createDesk({
+    env: { ELITE_SOLANA_RPC_URL: 'https://rpc.example' },
+    paperPath: path.join(directory, 'paper.json'),
+  });
   await assert.rejects(() => desk.start(), (error) => error.statusCode === 409);
   assert.match(desk.snapshot().error, /kľúče/);
   const server = createServer(desk);
@@ -44,9 +48,17 @@ test('start without keys is refused and the page is served', async () => {
     const html = await page.text();
     assert.equal(page.status, 200);
     assert.match(html, /Spustiť paper/);
+    assert.match(html, /node chain-reader\/src\/serve\.js/);
+    assert.match(html, /127\.0\.0\.1:8787/);
     const status = await fetch(`http://127.0.0.1:${port}/api/status`);
     const json = await status.json();
     assert.equal(json.running, false);
+    assert.equal(json.limits.maxOpenPositions, 3);
+    assert.equal(json.limits.minTraderSamples, 30);
+    assert.equal(json.book.openPositions, 0);
+    assert.equal(json.book.ordersToday, 0);
+    assert.equal(json.config.ok, true);
+    assert.equal(JSON.stringify(json).includes('tvoj-kľúč'), false);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
