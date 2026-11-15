@@ -85,7 +85,7 @@ async function discoverRecentWallets(config, options = {}) {
       historyDone = true;
       break;
     }
-    if (read > 0 || !resumeBefore || resumeBefore === before) {
+    if (options.tipOnly || read > 0 || !resumeBefore || resumeBefore === before) {
       break;
     }
     before = resumeBefore;

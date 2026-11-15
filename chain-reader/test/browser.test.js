@@ -6,6 +6,7 @@ const test = require('node:test');
 const { createBrowserDesk, paceMs } = require('../src/browser-session');
 
 const KEY = 'helius-key-aaaa';
+const OUR = 'So11111111111111111111111111111111111111112';
 
 test('one Helius key waits long enough to last the month', () => {
   assert.equal(paceMs(1), 84582);
@@ -28,6 +29,7 @@ test('a browser desk accepts a Helius address and does not send a transaction', 
   const connected = desk.connectRpc({
     key1: `https://mainnet.helius-rpc.com/?api-key=${KEY}`,
   });
+  desk.connectWallet({ address: OUR });
   assert.deepEqual(connected.keys, [true, false, false]);
   assert.equal(JSON.stringify(connected).includes(KEY), false);
   const after = await desk.tick();
@@ -47,6 +49,7 @@ test('a rejected Helius key stops the loop without the key in the error', async 
     fetch: async () => ({ ok: false, status: 401, async json() { return {}; } }),
   });
   desk.connectRpc({ key1: KEY });
+  desk.connectWallet({ address: OUR });
   desk.start();
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(updates.at(-1), 'Helius kľúč bol odmietnutý.');
@@ -65,6 +68,7 @@ test('an exhausted key leaves the next key running', async () => {
     },
   });
   desk.connectRpc({ key1: KEY, key2: 'helius-key-bbbb' });
+  desk.connectWallet({ address: OUR });
   await desk.tick();
   await desk.tick();
   const stopped = await desk.tick();
@@ -103,6 +107,7 @@ test('a late tick does not stop the loop that started after pause', async () => 
     }),
   });
   desk.connectRpc({ key1: KEY });
+  desk.connectWallet({ address: OUR });
   desk.start();
   await new Promise((resolve) => setTimeout(resolve, 20));
   desk.halt();
@@ -128,6 +133,7 @@ test('credits stay across a reload and reset when the month turns', async () => 
     fetch: async () => json({ result: [] }),
   });
   desk.connectRpc({ key1: KEY });
+  desk.connectWallet({ address: OUR });
   await desk.tick();
   assert.equal(desk.snapshot().credits[0].remaining, 950_000 - 1);
   const reloaded = createBrowserDesk({
@@ -147,6 +153,7 @@ test('credits stay across a reload and reset when the month turns', async () => 
     fetch: async () => json({ result: [] }),
   });
   rolled.connectRpc({ key1: KEY });
+  rolled.connectWallet({ address: OUR });
   const after = await rolled.tick();
   assert.equal(after.credits[0].remaining, 950_000 - 1);
 });
@@ -165,11 +172,62 @@ test('a 429 spends the attempt and the next key continues', async () => {
     },
   });
   desk.connectRpc({ key1: KEY, key2: 'helius-key-bbbb' });
+  desk.connectWallet({ address: OUR });
   const after = await desk.tick();
   assert.deepEqual(seen, [KEY, 'helius-key-bbbb']);
   assert.equal(after.error, null);
   assert.equal(after.credits[0].remaining, 950_000 - 1);
   assert.equal(after.credits[1].remaining, 950_000 - 1);
+});
+
+test('a tick without a public address does not call rpc', async () => {
+  let calls = 0;
+  const desk = createBrowserDesk({
+    auto: false,
+    fetch: async () => {
+      calls += 1;
+      return json({ result: [] });
+    },
+  });
+  desk.connectRpc({ key1: KEY });
+  const after = await desk.tick();
+  assert.equal(calls, 0);
+  assert.match(after.decision, /verejnú adresu/);
+});
+
+test('a known program signature is not fetched again', async () => {
+  const memory = new Map();
+  memory.set('elite-desk-book', JSON.stringify({
+    version: 2,
+    programSeen: ['old-tip'],
+    wallets: {},
+  }));
+  const storage = {
+    getItem: (key) => memory.get(key) || null,
+    setItem: (key, value) => memory.set(key, value),
+  };
+  const fetched = [];
+  const desk = createBrowserDesk({
+    auto: false,
+    storage,
+    fetch: async (_url, init) => {
+      const body = JSON.parse(init.body);
+      if (body.method === 'getSignaturesForAddress') {
+        return json({
+          result: [
+            { signature: 'fresh-tip', err: null },
+            { signature: 'old-tip', err: null },
+          ],
+        });
+      }
+      fetched.push(body.params[0]);
+      return json({ result: { transaction: { message: { accountKeys: ['WalletA'] } } } });
+    },
+  });
+  desk.connectRpc({ key1: KEY });
+  desk.connectWallet({ address: OUR });
+  await desk.tick();
+  assert.deepEqual(fetched, ['fresh-tip']);
 });
 
 test('the next poll reads the wallet that is still under 30', async () => {
@@ -200,6 +258,7 @@ test('the next poll reads the wallet that is still under 30', async () => {
     },
   });
   desk.connectRpc({ key1: KEY });
+  desk.connectWallet({ address: OUR });
   await desk.tick();
   assert.deepEqual(addresses, ['WalletA']);
 });
@@ -235,6 +294,7 @@ test('a filling wallet asks for signatures older than its cursor', async () => {
     },
   });
   desk.connectRpc({ key1: KEY });
+  desk.connectWallet({ address: OUR });
   await desk.tick();
   assert.equal(pages[0].before, 'old-sig');
 });

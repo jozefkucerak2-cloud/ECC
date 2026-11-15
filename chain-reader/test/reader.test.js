@@ -217,6 +217,34 @@ test('a short page of failed signatures finishes the history', async () => {
   assert.deepEqual(found.examined, []);
 });
 
+test('a seen program tip is not fetched and does not walk older', async () => {
+  const methods = [];
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    methods.push(body.method);
+    if (body.method === 'getSignaturesForAddress') {
+      assert.equal(body.params[1] && body.params[1].before, undefined);
+      return jsonResponse({
+        result: [
+          { signature: 'known', err: null },
+          { signature: 'known-2', err: null },
+        ],
+      });
+    }
+    throw new Error('transaction was fetched');
+  };
+  const found = await discoverRecentWallets(loadConfig(baseEnv()), {
+    fetch: fetchImpl,
+    seen: ['known', 'known-2'],
+    tipOnly: true,
+    limit: 2,
+    budget: 31,
+  });
+  assert.deepEqual(methods, ['getSignaturesForAddress']);
+  assert.equal(found.calls, 1);
+  assert.equal(found.examined.length, 0);
+});
+
 test('fee payer accepts a legacy string account key', () => {
   assert.equal(feePayer({
     transaction: { message: { accountKeys: ['LegacyPayer'] } },

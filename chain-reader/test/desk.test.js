@@ -324,6 +324,50 @@ test('a restarted desk still shows kill from the book', async () => {
   assert.equal(saved.positions.length, 1);
 });
 
+test('kill stops the reader and a missing address never calls it', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  let calls = 0;
+  const desk = createDesk({
+    env: { HELIUS_API_KEY_1: KEY, ELITE_SOLANA_RPC_URL: 'https://rpc.example' },
+    paperPath: path.join(directory, 'paper.json'),
+    createPool: () => ({
+      async refreshUsage() {},
+      msUntilPoll() {
+        return 0;
+      },
+      async discover() {
+        calls += 1;
+        return { trades: [], wallets: [], fetchedSignatures: 0, sample: 'insufficient', examined: [] };
+      },
+    }),
+    watch: async (pool, options) => {
+      while (!options.signal.aborted) {
+        const extra = options.discoverOptions();
+        if (!extra || !extra.skip) {
+          const result = await pool.discover(extra);
+          if (!options.signal.aborted && options.onResult) {
+            options.onResult(result);
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      }
+    },
+  });
+  await desk.start();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(calls, 0);
+  desk.connectWallet({ address: 'So11111111111111111111111111111111111111112' });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.ok(calls >= 1);
+  const frozen = calls;
+  const killed = await desk.kill();
+  assert.equal(killed.running, false);
+  assert.equal(killed.halted, true);
+  assert.equal(killed.decision, 'kill drží pozície');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(calls, frozen);
+});
+
 test('kill keeps the paper book and does not echo a key', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
   const desk = createDesk({

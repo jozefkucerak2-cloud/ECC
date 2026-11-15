@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { classifyTrade } = require('../src/classify');
-const { emptyLedger, focusAddress, loadLedger, haltLedger, ordersOnDay, releaseLedger, rollCredits, runCycle, LIMITS } = require('../src/paper/cycle');
+const { emptyLedger, focusAddress, loadLedger, haltLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, LIMITS } = require('../src/paper/cycle');
 
 const NOW = 1_700_000_000;
 const MINT = 'Mint111111111111111111111111111111111111111';
@@ -302,6 +302,37 @@ test('a stop fill does not count toward the daily order cap', () => {
     }],
   }, NOW + 5, OUR);
   assert.equal(ordersOnDay(closed.ledger.orders, '2023-11-14'), 1);
+});
+
+const PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+
+test('a repeated program tip keeps the signatures already counted', () => {
+  const first = runCycle(emptyLedger(), {
+    address: PROGRAM,
+    programId: PROGRAM,
+    examined: ['tip-a', 'tip-b'],
+    trades: [],
+  }, NOW, OUR);
+  assert.deepEqual(first.ledger.programSeen, ['tip-a', 'tip-b']);
+  const target = readTarget(first.ledger, NOW, OUR, PROGRAM);
+  assert.equal(target.address, PROGRAM);
+  assert.equal(target.tip, true);
+  assert.equal(target.seen.includes('tip-a'), true);
+  assert.equal(target.seen.includes('tip-b'), true);
+});
+
+test('there is no read without a public address or while kill holds', () => {
+  assert.equal(readTarget(emptyLedger(), NOW, '', PROGRAM), null);
+  assert.equal(readTarget(haltLedger(emptyLedger()), NOW, OUR, PROGRAM), null);
+});
+
+test('a fresh full sample has no wallet to reread and a stale one is only the tip', () => {
+  const full = runCycle(emptyLedger(), { trades: trades(30, 'buy') }, NOW, OUR);
+  assert.equal(focusAddress(full.ledger, NOW), null);
+  const stale = focusAddress(full.ledger, NOW + 120);
+  assert.equal(stale.address, 'WalletA');
+  assert.equal(stale.tip, true);
+  assert.equal(stale.before, null);
 });
 
 test('a stored trade list becomes a capped wallet and the next read follows it', () => {

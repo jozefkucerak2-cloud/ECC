@@ -3,7 +3,7 @@
 const { PUMP_PROGRAM_ID } = require('./config');
 const { discoverRecentWallets } = require('./discover');
 const { parseHeliusKey } = require('./helius-key');
-const { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, ordersOnDay, releaseLedger, rollCredits, runCycle, traderLadder } = require('./paper/cycle');
+const { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, traderLadder } = require('./paper/cycle');
 
 const POLL_CREDITS = 31;
 const USABLE_CREDITS = 950_000;
@@ -13,7 +13,7 @@ const PROJECT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const BOOK_KEY = 'elite-desk-book';
 
 const ROLES = Object.freeze([
-  { id: 'reader', name: 'Čítač', detail: 'Najprv špička programu, potom vlastné podpisy peňaženky, ktorá ešte nemá 30 čistých obchodov. Jedno kolo má strop 31 volaní.' },
+  { id: 'reader', name: 'Čítač', detail: 'Číta len s pripojenou verejnou adresou. Najprv peňaženku pod 30, potom čerstvý signál, inak len nové podpisy špičky programu. Jedno kolo má strop 31 volaní.' },
   { id: 'analyst', name: 'Analytik', detail: 'Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.' },
   { id: 'skeptic', name: 'Skeptik', detail: 'Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.' },
   { id: 'ceo', name: 'CEO', detail: 'Návrh posunie ďalej. Limity nezmení a veto neprepíše.' },
@@ -161,7 +161,13 @@ function createBrowserDesk(options = {}) {
       tried.add(slot);
       let calls = 0;
       try {
-        const focus = focusAddress(ledger, Math.floor(now() / 1000));
+        const target = readTarget(ledger, Math.floor(now() / 1000), wallet, PUMP_PROGRAM_ID);
+        if (!target) {
+          decision = ledger.halted ? 'kill drží pozície' : 'pripoj verejnú adresu';
+          error = null;
+          store(storage, ledger);
+          return snapshot();
+        }
         const result = await discoverRecentWallets({
           rpcUrl: `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(keys[slot])}`,
           timeoutMs: 20_000,
@@ -183,9 +189,10 @@ function createBrowserDesk(options = {}) {
           },
           limit: 30,
           budget: POLL_CREDITS,
-          address: focus ? focus.address : undefined,
-          seen: focus ? focus.seen : [],
-          before: focus && focus.before ? focus.before : undefined,
+          address: target.address,
+          seen: target.seen,
+          before: target.before || undefined,
+          tipOnly: target.tip === true,
         });
         remember(slot, calls);
         if (token !== generation) {
@@ -199,7 +206,7 @@ function createBrowserDesk(options = {}) {
           walletCount: Array.isArray(result.wallets) ? result.wallets.length : 0,
           fetchedSignatures: result.fetchedSignatures,
           creditsRemaining: usable - used[slot],
-          focus: focus ? 'peňaženka' : 'program',
+          focus: target.address === PUMP_PROGRAM_ID ? 'program' : 'peňaženka',
         };
         error = null;
         store(storage, ledger);
@@ -362,6 +369,7 @@ function store(storage, ledger) {
     orders: ledger.orders,
     positions: ledger.positions,
     credits: ledger.credits,
+    programSeen: ledger.programSeen,
     notice: ledger.notice,
   };
   storage.setItem(BOOK_KEY, JSON.stringify(copy));

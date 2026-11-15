@@ -437,6 +437,8 @@
         text('status', data.error);
       } else if (localNote) {
         text('status', localNote);
+      } else if (data.running && !data.wallet) {
+        text('status', 'Čítanie čaká na verejnú adresu. Bez nej sa reťaz nevolá.');
       } else if (data.running && data.localLoop) {
         text('status', 'Paper číta v tomto okne. Nočný beh je lokálny proces na stroji, ktorý nespí. Zavretie karty slučku zastaví. Na sieť sa nič neposiela.');
       } else if (data.running) {

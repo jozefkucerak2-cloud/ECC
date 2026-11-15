@@ -232,6 +232,7 @@ function createHeliusPool(env = process.env, options = {}) {
           before: discoverOptions.before,
           address: discoverOptions.address,
           seen: discoverOptions.seen,
+          tipOnly: discoverOptions.tipOnly === true,
           budget: pollCost(),
         },
       );
@@ -410,6 +411,12 @@ async function watchPool(pool, options = {}) {
   const signal = options.signal || { aborted: false };
   const sleep = options.sleep || ((ms, current) => cancellableSleep(ms, current || signal));
   while (!signal.aborted) {
+    const extra = typeof options.discoverOptions === 'function' ? options.discoverOptions() : {};
+    if (extra && extra.skip) {
+      const idleMs = Number.isFinite(options.idleMs) && options.idleMs > 0 ? options.idleMs : 5_000;
+      await sleep(idleMs, signal);
+      continue;
+    }
     if (typeof pool.refreshUsage === 'function') {
       await pool.refreshUsage();
     }
@@ -422,7 +429,6 @@ async function watchPool(pool, options = {}) {
       continue;
     }
     try {
-      const extra = typeof options.discoverOptions === 'function' ? options.discoverOptions() : {};
       const result = await pool.discover(extra || {});
       if (signal.aborted) {
         break;

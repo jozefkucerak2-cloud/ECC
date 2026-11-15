@@ -21,6 +21,7 @@ function emptyLedger() {
     orders: [],
     positions: [],
     credits: { cycleStartedAt: 0, used: [0, 0, 0] },
+    programSeen: [],
     notice: 'Bez nového paper zápisu. Telefón nie je zapojený.',
   };
 }
@@ -38,8 +39,13 @@ function loadLedger(raw) {
     orders: Array.isArray(source.orders) ? source.orders.map((order) => ({ ...order })) : [],
     positions: Array.isArray(source.positions) ? source.positions.map((position) => ({ ...position })) : [],
     credits: normalizeCredits(source.credits),
+    programSeen: normalizeSignatures(source.programSeen),
     notice: typeof source.notice === 'string' ? source.notice : emptyLedger().notice,
   };
+}
+
+function normalizeSignatures(list) {
+  return Array.isArray(list) ? list.filter((item) => typeof item === 'string').slice(0, LIMITS.seenCap) : [];
 }
 
 function normalizeCredits(credits) {
@@ -84,21 +90,48 @@ function focusAddress(raw, nowSeconds) {
   const rows = rankWallets(ledger.wallets);
   const filling = rows.filter((row) => row.classified < LIMITS.minTraderSamples && !row.exhausted);
   if (filling.length > 0) {
-    return { address: filling[0].address, seen: skipSet(filling[0]), before: filling[0].cursor };
+    return { address: filling[0].address, seen: skipSet(filling[0]), before: filling[0].cursor, tip: false };
   }
   const now = Number.isInteger(nowSeconds) ? nowSeconds : 0;
   const stale = rows.filter((row) => row.classified >= LIMITS.minTraderSamples && tradeAge(row.last, now) > LIMITS.maxEventAgeSec);
   if (stale.length > 0) {
-    return { address: stale[0].address, seen: skipSet(stale[0]), before: null };
+    return { address: stale[0].address, seen: skipSet(stale[0]), before: null, tip: true };
   }
   return null;
+}
+
+function readTarget(raw, nowSeconds, account, programId) {
+  if (!PUBLIC_ADDRESS.test(String(account || ''))) {
+    return null;
+  }
+  const ledger = loadLedger(raw);
+  if (ledger.halted) {
+    return null;
+  }
+  const focus = focusAddress(ledger, nowSeconds);
+  if (focus) {
+    return focus;
+  }
+  if (typeof programId !== 'string' || programId.length === 0) {
+    return null;
+  }
+  return {
+    address: programId,
+    seen: ledger.programSeen.slice(),
+    before: null,
+    tip: true,
+  };
 }
 
 function runCycle(rawLedger, observation, nowSeconds, account) {
   let ledger = loadLedger(rawLedger);
   const incoming = Array.isArray(observation && observation.trades) ? observation.trades : [];
   const wallets = incoming.reduce((next, trade) => absorb(next, trade), ledger.wallets);
-  ledger = { ...ledger, wallets: markExamined(wallets, observation) };
+  ledger = {
+    ...ledger,
+    wallets: markExamined(wallets, observation),
+    programSeen: rememberProgram(ledger.programSeen, observation),
+  };
   const best = rankWallets(ledger.wallets)[0] || null;
   const analyst = propose(best);
   const skeptic = review(best, nowSeconds);
@@ -199,6 +232,16 @@ function markExamined(wallets, observation) {
       exhausted: prior.exhausted || observation.historyDone === true,
     },
   };
+}
+
+function rememberProgram(programSeen, observation) {
+  if (!observation || typeof observation.address !== 'string' || observation.address !== observation.programId) {
+    return Array.isArray(programSeen) ? programSeen : [];
+  }
+  const examined = Array.isArray(observation.examined)
+    ? observation.examined.filter((item) => typeof item === 'string')
+    : [];
+  return rememberTip(programSeen, examined);
 }
 
 function rememberTip(skip, examined) {
@@ -462,6 +505,7 @@ module.exports = {
   releaseLedger,
   traderLadder,
   focusAddress,
+  readTarget,
   ordersOnDay,
   runCycle,
 };

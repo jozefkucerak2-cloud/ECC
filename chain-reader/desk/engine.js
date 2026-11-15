@@ -366,7 +366,7 @@ var EliteEngine = (() => {
             historyDone = true;
             break;
           }
-          if (read > 0 || !resumeBefore || resumeBefore === before) {
+          if (options.tipOnly || read > 0 || !resumeBefore || resumeBefore === before) {
             break;
           }
           before = resumeBefore;
@@ -481,6 +481,7 @@ var EliteEngine = (() => {
           orders: [],
           positions: [],
           credits: { cycleStartedAt: 0, used: [0, 0, 0] },
+          programSeen: [],
           notice: "Bez nov\xE9ho paper z\xE1pisu. Telef\xF3n nie je zapojen\xFD."
         };
       }
@@ -495,8 +496,12 @@ var EliteEngine = (() => {
           orders: Array.isArray(source.orders) ? source.orders.map((order) => ({ ...order })) : [],
           positions: Array.isArray(source.positions) ? source.positions.map((position) => ({ ...position })) : [],
           credits: normalizeCredits(source.credits),
+          programSeen: normalizeSignatures(source.programSeen),
           notice: typeof source.notice === "string" ? source.notice : emptyLedger().notice
         };
+      }
+      function normalizeSignatures(list) {
+        return Array.isArray(list) ? list.filter((item) => typeof item === "string").slice(0, LIMITS.seenCap) : [];
       }
       function normalizeCredits(credits) {
         const used = [0, 1, 2].map((index) => {
@@ -535,20 +540,46 @@ var EliteEngine = (() => {
         const rows = rankWallets(ledger.wallets);
         const filling = rows.filter((row) => row.classified < LIMITS.minTraderSamples && !row.exhausted);
         if (filling.length > 0) {
-          return { address: filling[0].address, seen: skipSet(filling[0]), before: filling[0].cursor };
+          return { address: filling[0].address, seen: skipSet(filling[0]), before: filling[0].cursor, tip: false };
         }
         const now = Number.isInteger(nowSeconds) ? nowSeconds : 0;
         const stale = rows.filter((row) => row.classified >= LIMITS.minTraderSamples && tradeAge(row.last, now) > LIMITS.maxEventAgeSec);
         if (stale.length > 0) {
-          return { address: stale[0].address, seen: skipSet(stale[0]), before: null };
+          return { address: stale[0].address, seen: skipSet(stale[0]), before: null, tip: true };
         }
         return null;
+      }
+      function readTarget(raw, nowSeconds, account, programId) {
+        if (!PUBLIC_ADDRESS.test(String(account || ""))) {
+          return null;
+        }
+        const ledger = loadLedger(raw);
+        if (ledger.halted) {
+          return null;
+        }
+        const focus = focusAddress(ledger, nowSeconds);
+        if (focus) {
+          return focus;
+        }
+        if (typeof programId !== "string" || programId.length === 0) {
+          return null;
+        }
+        return {
+          address: programId,
+          seen: ledger.programSeen.slice(),
+          before: null,
+          tip: true
+        };
       }
       function runCycle(rawLedger, observation, nowSeconds, account) {
         let ledger = loadLedger(rawLedger);
         const incoming = Array.isArray(observation && observation.trades) ? observation.trades : [];
         const wallets = incoming.reduce((next, trade) => absorb(next, trade), ledger.wallets);
-        ledger = { ...ledger, wallets: markExamined(wallets, observation) };
+        ledger = {
+          ...ledger,
+          wallets: markExamined(wallets, observation),
+          programSeen: rememberProgram(ledger.programSeen, observation)
+        };
         const best = rankWallets(ledger.wallets)[0] || null;
         const analyst = propose(best);
         const skeptic = review(best, nowSeconds);
@@ -640,6 +671,13 @@ var EliteEngine = (() => {
             exhausted: prior.exhausted || observation.historyDone === true
           }
         };
+      }
+      function rememberProgram(programSeen, observation) {
+        if (!observation || typeof observation.address !== "string" || observation.address !== observation.programId) {
+          return Array.isArray(programSeen) ? programSeen : [];
+        }
+        const examined = Array.isArray(observation.examined) ? observation.examined.filter((item) => typeof item === "string") : [];
+        return rememberTip(programSeen, examined);
       }
       function rememberTip(skip, examined) {
         const prior = Array.isArray(skip) ? skip : [];
@@ -880,6 +918,7 @@ var EliteEngine = (() => {
         releaseLedger,
         traderLadder,
         focusAddress,
+        readTarget,
         ordersOnDay,
         runCycle
       };
@@ -892,7 +931,7 @@ var EliteEngine = (() => {
       var { PUMP_PROGRAM_ID } = require_config();
       var { discoverRecentWallets } = require_discover();
       var { parseHeliusKey } = require_helius_key();
-      var { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, ordersOnDay, releaseLedger, rollCredits, runCycle, traderLadder } = require_cycle();
+      var { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, traderLadder } = require_cycle();
       var POLL_CREDITS = 31;
       var USABLE_CREDITS = 95e4;
       var MONTH_MS = 30 * 24 * 60 * 60 * 1e3;
@@ -900,7 +939,7 @@ var EliteEngine = (() => {
       var PROJECT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       var BOOK_KEY = "elite-desk-book";
       var ROLES = Object.freeze([
-        { id: "reader", name: "\u010C\xEDta\u010D", detail: "Najprv \u0161pi\u010Dka programu, potom vlastn\xE9 podpisy pe\u0148a\u017Eenky, ktor\xE1 e\u0161te nem\xE1 30 \u010Dist\xFDch obchodov. Jedno kolo m\xE1 strop 31 volan\xED." },
+        { id: "reader", name: "\u010C\xEDta\u010D", detail: "\u010C\xEDta len s pripojenou verejnou adresou. Najprv pe\u0148a\u017Eenku pod 30, potom \u010Derstv\xFD sign\xE1l, inak len nov\xE9 podpisy \u0161pi\u010Dky programu. Jedno kolo m\xE1 strop 31 volan\xED." },
         { id: "analyst", name: "Analytik", detail: "N\xE1vrh vznikne a\u017E ke\u010F m\xE1 jedna pe\u0148a\u017Eenka 30 \u010Dist\xFDch obchodov." },
         { id: "skeptic", name: "Skeptik", detail: "Zamietne vzorku pod 30, nejasn\xFD smer a udalos\u0165 star\u0161iu ako 60 sek\xFAnd." },
         { id: "ceo", name: "CEO", detail: "N\xE1vrh posunie \u010Falej. Limity nezmen\xED a veto neprep\xED\u0161e." },
@@ -1041,7 +1080,13 @@ var EliteEngine = (() => {
             tried.add(slot);
             let calls = 0;
             try {
-              const focus = focusAddress(ledger, Math.floor(now() / 1e3));
+              const target = readTarget(ledger, Math.floor(now() / 1e3), wallet, PUMP_PROGRAM_ID);
+              if (!target) {
+                decision = ledger.halted ? "kill dr\u017E\xED poz\xEDcie" : "pripoj verejn\xFA adresu";
+                error = null;
+                store(storage, ledger);
+                return snapshot();
+              }
               const result = await discoverRecentWallets({
                 rpcUrl: `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(keys[slot])}`,
                 timeoutMs: 2e4,
@@ -1063,9 +1108,10 @@ var EliteEngine = (() => {
                 },
                 limit: 30,
                 budget: POLL_CREDITS,
-                address: focus ? focus.address : void 0,
-                seen: focus ? focus.seen : [],
-                before: focus && focus.before ? focus.before : void 0
+                address: target.address,
+                seen: target.seen,
+                before: target.before || void 0,
+                tipOnly: target.tip === true
               });
               remember(slot, calls);
               if (token !== generation) {
@@ -1079,7 +1125,7 @@ var EliteEngine = (() => {
                 walletCount: Array.isArray(result.wallets) ? result.wallets.length : 0,
                 fetchedSignatures: result.fetchedSignatures,
                 creditsRemaining: usable - used[slot],
-                focus: focus ? "pe\u0148a\u017Eenka" : "program"
+                focus: target.address === PUMP_PROGRAM_ID ? "program" : "pe\u0148a\u017Eenka"
               };
               error = null;
               store(storage, ledger);
@@ -1228,6 +1274,7 @@ var EliteEngine = (() => {
           orders: ledger.orders,
           positions: ledger.positions,
           credits: ledger.credits,
+          programSeen: ledger.programSeen,
           notice: ledger.notice
         };
         storage.setItem(BOOK_KEY, JSON.stringify(copy));

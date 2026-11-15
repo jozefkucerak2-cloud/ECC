@@ -7,13 +7,13 @@ const path = require('node:path');
 const { loadConfig } = require('./config');
 const { createHeliusPool, watchPool } = require('./helius');
 const { parseHeliusKey } = require('./helius-key');
-const { LIMITS, emptyLedger, focusAddress, haltLedger, loadLedger, ordersOnDay, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
+const { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
 
 const DESK_FILE = path.join(__dirname, '..', 'desk', 'index.html');
 const ENGINE_FILE = path.join(__dirname, '..', 'desk', 'engine.js');
 
 const ROLES = Object.freeze([
-  { id: 'reader', name: 'Čítač', detail: 'Najprv špička programu, potom vlastné podpisy peňaženky, ktorá ešte nemá 30 čistých obchodov. Jedno kolo má strop 31 volaní.' },
+  { id: 'reader', name: 'Čítač', detail: 'Číta len s pripojenou verejnou adresou. Najprv peňaženku pod 30, potom čerstvý signál, inak len nové podpisy špičky programu. Jedno kolo má strop 31 volaní.' },
   { id: 'analyst', name: 'Analytik', detail: 'Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.' },
   { id: 'skeptic', name: 'Skeptik', detail: 'Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.' },
   { id: 'ceo', name: 'CEO', detail: 'Návrh posunie ďalej. Limity nezmení a veto neprepíše.' },
@@ -162,8 +162,16 @@ function createDesk(options = {}) {
     state.loop = watch(pool, {
       signal: controller.signal,
       discoverOptions() {
-        const focus = focusAddress(readPaper(paperFile), Math.floor(Date.now() / 1000));
-        return focus ? { address: focus.address, seen: focus.seen, before: focus.before || undefined } : {};
+        const target = readTarget(readPaper(paperFile), Math.floor(Date.now() / 1000), state.wallet, config.programId);
+        if (!target) {
+          return { skip: true };
+        }
+        return {
+          address: target.address,
+          seen: target.seen,
+          before: target.before || undefined,
+          tipOnly: target.tip === true,
+        };
       },
       onResult(result) {
         if (state.token !== token || controller.signal.aborted) {
@@ -209,11 +217,15 @@ function createDesk(options = {}) {
     return snapshot();
   }
 
-  function kill() {
+  async function kill() {
     const ledger = haltLedger(readPaper(paperFile));
     writePaper(paperFile, ledger);
     state.halted = true;
     state.error = null;
+    state.decision = 'kill drží pozície';
+    await halt();
+    state.halted = true;
+    state.running = false;
     state.decision = 'kill drží pozície';
     return snapshot();
   }
@@ -511,7 +523,7 @@ function createServer(desk) {
       }
       if (request.method === 'POST' && url.pathname === '/api/kill') {
         assertDesk(request);
-        sendJson(response, 200, desk.kill());
+        sendJson(response, 200, await desk.kill());
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/release') {
