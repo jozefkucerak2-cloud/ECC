@@ -13,7 +13,7 @@ function baseEnv(extra = {}) {
     ELITE_RPC_MAX_RETRIES: '1',
     ELITE_RPC_RETRY_BASE_MS: '0',
     ELITE_SIGNATURE_LIMIT: '5',
-    ELITE_MIN_CLEAN_SAMPLE: '30',
+    ELITE_MIN_CLEAN_SAMPLE: '5',
     ELITE_PROGRAM_ID: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
     ...extra,
   };
@@ -35,6 +35,16 @@ test('invalid rpc url refuses to start', () => {
 
 test('signature limit above 100 refuses to start', () => {
   assert.throws(() => loadConfig(baseEnv({ ELITE_SIGNATURE_LIMIT: '101' })), ConfigError);
+});
+
+test('sample size cannot exceed one page', () => {
+  assert.throws(() => loadConfig(baseEnv({ ELITE_MIN_CLEAN_SAMPLE: '30' })), ConfigError);
+});
+
+test('defaults fit one sufficient page', () => {
+  const config = loadConfig({ ELITE_SOLANA_RPC_URL: 'https://rpc.example' });
+  assert.equal(config.signatureLimit, 30);
+  assert.equal(config.minCleanSample, 30);
 });
 
 test('send transaction is rejected before any request', async () => {
@@ -62,7 +72,7 @@ test('429 is retried once and then returns the slot', async () => {
 });
 
 test('failed signature is skipped and fee payers are counted', async () => {
-  const config = loadConfig(baseEnv({ ELITE_MIN_CLEAN_SAMPLE: '30' }));
+  const config = loadConfig(baseEnv({ ELITE_MIN_CLEAN_SAMPLE: '4' }));
   const requests = [];
   const fetchImpl = async (_url, init) => {
     const body = JSON.parse(init.body);

@@ -77,7 +77,8 @@ function createHeliusPool(env = process.env, options = {}) {
   const now = options.now || Date.now;
   const fetchImpl = options.fetch;
   const usagePath = options.usagePath || null;
-  const signatureLimit = options.signatureLimit || 25;
+  const signatureLimit = options.signatureLimit || 30;
+  const minCleanSample = options.minCleanSample || 30;
   const programId = options.programId || '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
   const usable = Math.floor(MONTHLY_CREDITS * (1 - RESERVE_RATIO));
   const refillPerMs = usable / (CYCLE_DAYS * 24 * 60 * 60 * 1000);
@@ -136,8 +137,11 @@ function createHeliusPool(env = process.env, options = {}) {
     key.updatedAt = at;
   }
 
-  function msUntil(method) {
-    const cost = creditCost(method);
+  function pollCost() {
+    return CREDIT_COSTS.getSignaturesForAddress + (signatureLimit * CREDIT_COSTS.getTransaction);
+  }
+
+  function msUntilCost(cost) {
     const at = now();
     let soonest = Infinity;
     for (const key of keys) {
@@ -157,6 +161,10 @@ function createHeliusPool(env = process.env, options = {}) {
       soonest = Math.min(soonest, Math.ceil((cost - key.tokens) / refillPerMs));
     }
     return soonest === Infinity ? 0 : soonest;
+  }
+
+  function msUntil(method) {
+    return msUntilCost(creditCost(method));
   }
 
   async function call(method, params = []) {
@@ -199,9 +207,26 @@ function createHeliusPool(env = process.env, options = {}) {
   return {
     call,
     msUntil,
+    msUntilPoll() {
+      return msUntilCost(pollCost());
+    },
     async discover(discoverOptions = {}) {
+      const cost = pollCost();
+      const waitMs = msUntilCost(cost);
+      if (waitMs > 0) {
+        const exhausted = keys.every((key) => key.creditsUsed + cost > MONTHLY_CREDITS);
+        throw new RpcError(
+          exhausted ? 'helius monthly credit budget is exhausted' : 'helius credit pace is waiting',
+          exhausted ? 'safe mode' : 'retry',
+          { method: 'discover', waitMs },
+        );
+      }
       const found = await discoverRecentWallets(
-        { programId: discoverOptions.programId || programId, signatureLimit, minCleanSample: 30 },
+        {
+          programId: discoverOptions.programId || programId,
+          signatureLimit,
+          minCleanSample: discoverOptions.minCleanSample || minCleanSample,
+        },
         { client: { call }, limit: signatureLimit, before: discoverOptions.before },
       );
       return { ...found, usage: statusOf(keys, now(), refill) };
@@ -378,7 +403,7 @@ async function watchPool(pool, options = {}) {
     if (typeof pool.refreshUsage === 'function') {
       await pool.refreshUsage();
     }
-    const wait = pool.msUntil('getSignaturesForAddress');
+    const wait = pool.msUntilPoll ? pool.msUntilPoll() : pool.msUntil('getSignaturesForAddress');
     if (wait > 0) {
       await sleep(wait);
       continue;

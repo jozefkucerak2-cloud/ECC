@@ -7,7 +7,7 @@ const DEFAULTS = Object.freeze({
   timeoutMs: 10_000,
   maxRetries: 2,
   retryBaseMs: 400,
-  signatureLimit: 25,
+  signatureLimit: 30,
   minCleanSample: 30,
   programId: PUMP_PROGRAM_ID,
 });
@@ -61,6 +61,9 @@ function validateConfig(config) {
   }
   if (config.minCleanSample < 1) {
     throw new ConfigError('minCleanSample must be at least 1');
+  }
+  if (config.minCleanSample > config.signatureLimit) {
+    throw new ConfigError('minCleanSample cannot exceed signatureLimit');
   }
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(config.programId)) {
     throw new ConfigError('programId must be a base58 address');

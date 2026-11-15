@@ -10,6 +10,7 @@ function main(env = process.env) {
   const pool = createHeliusPool(env, {
     usagePath: env.HELIUS_USAGE_PATH || path.join(__dirname, '..', 'data', 'helius-usage.json'),
     signatureLimit: config.signatureLimit,
+    minCleanSample: config.minCleanSample,
     timeoutMs: config.timeoutMs,
     programId: config.programId,
   });

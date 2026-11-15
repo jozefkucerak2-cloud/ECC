@@ -170,6 +170,44 @@ test('after the burst the pool waits instead of calling again', async () => {
   assert.ok(slept[0] > 0);
 });
 
+test('a partial credit does not start the next poll', async () => {
+  let calls = 0;
+  const pool = createHeliusPool({ HELIUS_API_KEY_1: KEY_A }, {
+    now: () => 0,
+    signatureLimit: 1,
+    fetch: async () => {
+      calls += 1;
+      return jsonResponse({ jsonrpc: '2.0', id: 1, result: 'ok' });
+    },
+  });
+  await pool.call('getSlot');
+  assert.equal(pool.msUntil('getSignaturesForAddress'), 0);
+  assert.ok(pool.msUntilPoll() > 0);
+  await assert.rejects(() => pool.discover(), (error) => error.category === 'retry' && error.details.waitMs > 0);
+  assert.equal(calls, 1);
+});
+
+test('helius sample threshold comes from the pool', async () => {
+  const pool = createHeliusPool({ HELIUS_API_KEY_1: KEY_A }, {
+    now: () => 0,
+    signatureLimit: 1,
+    minCleanSample: 1,
+    fetch: async (_url, request) => {
+      const body = JSON.parse(request.body);
+      if (body.method === 'getSignaturesForAddress') {
+        return jsonResponse({ jsonrpc: '2.0', id: 1, result: [{ signature: 'sig-1', err: null }] });
+      }
+      return jsonResponse({
+        jsonrpc: '2.0',
+        id: 1,
+        result: { transaction: { message: { accountKeys: ['WalletA'] } } },
+      });
+    },
+  });
+  const found = await pool.discover();
+  assert.equal(found.sample, 'ok');
+});
+
 test('usage refresh stores Helius credits and drops the api key', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'helius-usage-'));
   const usagePath = path.join(directory, 'usage.json');

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Elite</title>
+  <style>
+    :root {
+      --ink: #16140f;
+      --bone: #f3ecdf;
+      --paper: #f7f2e8;
+      --black: #090909;
+      --mute: #7a7468;
+      --line: rgba(22, 20, 15, 0.12);
+      --live: #d6ff4a;
+      --wait: #e7b15a;
+      --miss: #a89880;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--black); color: var(--bone); }
+    body {
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(300px, 44vw) 1fr;
+    }
+    .stage {
+      background: var(--paper);
+      color: var(--ink);
+      padding: 36px 40px 32px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 100vh;
+    }
+    .kicker {
+      margin: 0;
+      font-size: 12px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--mute);
+    }
+    h1 {
+      margin: 10px 0 0;
+      font-family: Palatino, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+      font-weight: 500;
+      font-size: clamp(64px, 8vw, 112px);
+      line-height: 0.86;
+      letter-spacing: -0.04em;
+    }
+    .mark {
+      width: min(280px, 70%);
+      aspect-ratio: 1;
+      margin: 28px 0;
+      background: var(--ink);
+      border-radius: 36px;
+      display: grid;
+      place-items: center;
+      position: relative;
+    }
+    .eye {
+      width: 62%;
+      height: 18px;
+      background: var(--bone);
+      border-radius: 999px;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+    }
+    .eye span {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--ink);
+      animation: look 4.8s ease-in-out infinite;
+    }
+    .mark.live .eye span { background: var(--live); }
+    @keyframes look {
+      0%, 100% { transform: translateX(-28px); }
+      50% { transform: translateX(28px); }
+    }
+    .lede {
+      max-width: 36ch;
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.45;
+    }
+    .actions { display: flex; gap: 10px; margin-top: 28px; flex-wrap: wrap; }
+    button {
+      appearance: none;
+      border: 0;
+      background: var(--ink);
+      color: var(--bone);
+      font: inherit;
+      font-size: 15px;
+      padding: 14px 18px;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    button.ghost {
+      background: transparent;
+      color: var(--ink);
+      box-shadow: inset 0 0 0 1px var(--line);
+    }
+    button:disabled { opacity: 0.45; cursor: default; }
+    .panel {
+      padding: 36px 40px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 16px;
+    }
+    .panel-head p { margin: 0; color: var(--mute); font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; }
+    .mode {
+      font-family: Palatino, Georgia, serif;
+      font-size: 28px;
+    }
+    ol { list-style: none; margin: 0; padding: 0; }
+    li {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px 18px;
+      padding: 14px 0;
+      border-top: 1px solid rgba(243, 236, 223, 0.14);
+    }
+    li strong { font-weight: 600; font-size: 18px; }
+    li span.detail { grid-column: 1; color: var(--mute); font-size: 13px; }
+    .pill {
+      align-self: center;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 6px 10px;
+      border-radius: 999px;
+      color: var(--black);
+      background: var(--miss);
+    }
+    .pill.bezi, .pill.pripraveny { background: var(--live); }
+    .pill.vypnuty, .pill.nepripojena, .pill.chyba { background: transparent; color: var(--miss); box-shadow: inset 0 0 0 1px rgba(168, 152, 128, 0.5); }
+    .meters {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .meter {
+      border-top: 1px solid rgba(243, 236, 223, 0.14);
+      padding-top: 12px;
+    }
+    .meter b {
+      display: block;
+      font-family: Palatino, Georgia, serif;
+      font-size: 32px;
+      font-weight: 500;
+    }
+    .meter small { color: var(--mute); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .keys { display: flex; gap: 8px; }
+    .key {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      color: var(--mute);
+      box-shadow: inset 0 0 0 1px rgba(243, 236, 223, 0.2);
+    }
+    .key.on { background: var(--live); color: var(--black); box-shadow: none; }
+    .note { color: var(--mute); font-size: 14px; line-height: 1.5; max-width: 62ch; }
+    code {
+      font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+      font-size: 13px;
+      color: var(--bone);
+    }
+    @media (max-width: 860px) {
+      .shell { grid-template-columns: 1fr; }
+      .stage, .panel { min-height: auto; padding: 28px 22px; }
+      .meters { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .eye span { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="stage">
+      <div>
+        <p class="kicker">Paper konzola</p>
+        <h1>Elite</h1>
+        <div class="mark" id="mark" aria-hidden="true"><div class="eye"><span></span></div></div>
+        <p class="lede" id="lede">Čítač pozerá verejné podpisy. Obchod neotvára a Phantom nie je pripojený.</p>
+        <div class="actions">
+          <button id="start" type="button">Spustiť čítač</button>
+          <button id="stop" class="ghost" type="button">Zastaviť</button>
+        </div>
+      </div>
+      <p class="note" id="hint" style="color:#6f6a60"></p>
+    </section>
+    <section class="panel">
+      <div class="panel-head">
+        <p>Tím</p>
+        <div class="mode" id="mode">PAPER</div>
+      </div>
+      <ol id="roles">
+        <li><strong>Čítač</strong><span class="pill pripraveny">pripravený</span><span class="detail">Helius, posledné podpisy pump programu</span></li>
+        <li><strong>Analytik</strong><span class="pill chyba">chýba</span><span class="detail">Ešte nie je v kóde</span></li>
+        <li><strong>Skeptik</strong><span class="pill chyba">chýba</span><span class="detail">Ešte nie je v kóde</span></li>
+        <li><strong>CEO</strong><span class="pill chyba">chýba</span><span class="detail">Ešte nie je v kóde</span></li>
+        <li><strong>Risk governor</strong><span class="pill chyba">chýba</span><span class="detail">Ešte nie je v kóde</span></li>
+        <li><strong>Executor</strong><span class="pill vypnuty">vypnutý</span><span class="detail">Transakcie sú zakázané</span></li>
+        <li><strong>Telegram</strong><span class="pill chyba">chýba</span><span class="detail">Ešte nie je v kóde</span></li>
+        <li><strong>Phantom</strong><span class="pill nepripojena">nepripojená</span><span class="detail">Peňaženka nie je pripojená</span></li>
+      </ol>
+      <div class="meters">
+        <div class="meter"><small>Vzorka</small><b id="sample">—</b></div>
+        <div class="meter"><small>Peňaženky</small><b id="wallets">—</b></div>
+        <div class="meter"><small>Kredity</small><b id="credits">—</b></div>
+      </div>
+      <div>
+        <p class="kicker" style="color:#7a7468">Helius kľúče v prostredí</p>
+        <div class="keys" id="keys"></div>
+      </div>
+      <p class="note">Kľúče patria do shellu, nie do tejto stránky. <code>export HELIUS_API_KEY_1</code>, <code>HELIUS_API_KEY_2</code>, <code>HELIUS_API_KEY_3</code> a potom <code>node chain-reader/src/serve.js</code>. UUID projektu je <code>HELIUS_PROJECT_ID_1</code> až <code>3</code>.</p>
+    </section>
+  </main>
+  <script>
+    const roles = document.getElementById('roles');
+    const keys = document.getElementById('keys');
+    const mark = document.getElementById('mark');
+    const hint = document.getElementById('hint');
+    const start = document.getElementById('start');
+    const stop = document.getElementById('stop');
+
+    function pillClass(state) {
+      return String(state || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+
+    function paint(data) {
+      roles.replaceChildren();
+      data.roles.forEach((role) => {
+        const item = document.createElement('li');
+        const name = document.createElement('strong');
+        name.textContent = role.name;
+        const detail = document.createElement('span');
+        detail.className = 'detail';
+        detail.textContent = role.detail;
+        const pill = document.createElement('span');
+        pill.className = 'pill ' + pillClass(role.state);
+        pill.textContent = role.state;
+        item.append(name, pill, detail);
+        roles.append(item);
+      });
+      keys.replaceChildren();
+      data.keys.forEach((on, index) => {
+        const dot = document.createElement('div');
+        dot.className = on ? 'key on' : 'key';
+        dot.textContent = String(index + 1);
+        keys.append(dot);
+      });
+      mark.classList.toggle('live', Boolean(data.running));
+      const last = data.last || {};
+      document.getElementById('sample').textContent = last.sample || '—';
+      document.getElementById('wallets').textContent = last.walletCount == null ? '—' : String(last.walletCount);
+      document.getElementById('credits').textContent = last.creditsRemaining == null ? '—' : String(last.creditsRemaining);
+      hint.textContent = data.error || (data.running ? 'Čítač beží v tomto procese.' : 'Pripravený. Spustenie vezme kľúče len z prostredia.');
+      start.disabled = Boolean(data.running);
+      stop.disabled = !data.running;
+    }
+
+    async function refresh() {
+      const response = await fetch('/api/status');
+      if (!response.ok) throw new Error('status');
+      paint(await response.json());
+    }
+
+    async function post(path) {
+      const response = await fetch(path, { method: 'POST' });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'požiadavka zlyhala');
+      paint(body);
+    }
+
+    start.addEventListener('click', () => post('/api/start').catch((error) => { hint.textContent = error.message; }));
+    stop.addEventListener('click', () => post('/api/stop').catch((error) => { hint.textContent = error.message; }));
+    refresh().catch(() => {
+      hint.textContent = 'Táto stránka je len obraz. Čítač sa púšťa na tvojom stroji príkazom node chain-reader/src/serve.js';
+      start.disabled = true;
+      stop.disabled = true;
+    });
+    setInterval(() => { refresh().catch(() => {}); }, 2000);
+  </script>
+</body>
+</html>
