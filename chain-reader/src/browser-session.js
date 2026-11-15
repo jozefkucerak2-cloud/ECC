@@ -185,6 +185,7 @@ function createBrowserDesk(options = {}) {
           budget: POLL_CREDITS,
           address: focus ? focus.address : undefined,
           seen: focus ? focus.seen : [],
+          before: focus && focus.before ? focus.before : undefined,
         });
         remember(slot, calls);
         if (token !== generation) {

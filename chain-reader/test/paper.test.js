@@ -151,7 +151,11 @@ test('an unknown signature is remembered so the next poll can walk older history
     trades: trades(1, 'buy'),
   }, NOW, OUR);
   assert.equal(first.ledger.wallets.WalletA.classified, 1);
-  assert.equal(first.ledger.wallets.WalletA.seen.includes('junk'), true);
+  assert.equal(first.ledger.wallets.WalletA.seen.includes('junk'), false);
+  assert.equal(first.ledger.wallets.WalletA.skip.includes('junk'), true);
+  const focus = focusAddress(first.ledger, NOW);
+  assert.equal(focus.seen.includes('junk'), true);
+  assert.equal(focus.before, 'buy-0');
   const again = runCycle(first.ledger, {
     address: 'WalletA',
     programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
@@ -160,6 +164,88 @@ test('an unknown signature is remembered so the next poll can walk older history
   }, NOW, OUR);
   assert.equal(again.ledger.wallets.WalletA.classified, 1);
   assert.equal(focusAddress(again.ledger, NOW).seen.includes('junk'), true);
+  assert.equal(focusAddress(again.ledger, NOW).before, 'buy-0');
+});
+
+test('a cap of junk signatures still leaves the wallet open for older history', () => {
+  const junk = Array.from({ length: LIMITS.seenCap }, (_item, index) => `junk-${index}`);
+  const first = runCycle(emptyLedger(), {
+    address: 'WalletA',
+    programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+    examined: junk.concat(['buy-0']),
+    trades: trades(1, 'buy'),
+  }, NOW, OUR);
+  assert.equal(first.ledger.wallets.WalletA.classified, 1);
+  assert.equal(first.ledger.wallets.WalletA.seen.includes('junk-0'), false);
+  const focus = focusAddress(first.ledger, NOW);
+  assert.equal(focus.address, 'WalletA');
+  assert.equal(focus.before, 'buy-0');
+  assert.equal(focus.seen.includes('junk-0'), true);
+  const older = runCycle(first.ledger, {
+    address: 'WalletA',
+    programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+    startedBefore: 'buy-0',
+    examined: ['older-junk'],
+    trades: [],
+  }, NOW, OUR);
+  const next = focusAddress(older.ledger, NOW);
+  assert.equal(older.ledger.wallets.WalletA.classified, 1);
+  assert.equal(next.address, 'WalletA');
+  assert.equal(next.before, 'older-junk');
+  assert.equal(next.seen.includes('junk-0'), true);
+});
+
+test('an empty older page ends the wallet walk', () => {
+  const started = runCycle(emptyLedger(), {
+    address: 'WalletA',
+    programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+    examined: ['junk'],
+    trades: [],
+  }, NOW, OUR);
+  const done = runCycle(started.ledger, {
+    address: 'WalletA',
+    programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+    startedBefore: 'junk',
+    examined: [],
+    trades: [],
+  }, NOW, OUR);
+  assert.equal(done.ledger.wallets.WalletA.exhausted, true);
+  assert.equal(focusAddress(done.ledger, NOW), null);
+});
+
+test('a dump in the entry block closes even when the book was written later', () => {
+  const opened = runCycle(emptyLedger(), { trades: trades(30, 'buy', NOW) }, NOW + 8, OUR);
+  assert.equal(opened.ledger.positions[0].entryBlockTime, NOW);
+  assert.equal(opened.ledger.positions[0].openedAt, NOW + 8);
+  const closed = runCycle(opened.ledger, {
+    trades: [{
+      signature: 'same-block',
+      address: 'WalletB',
+      side: 'sell',
+      mint: MINT,
+      blockTime: NOW,
+      solLamports: 1,
+      tokenRaw: '1000000',
+    }],
+  }, NOW + 8, OUR);
+  assert.equal(closed.ledger.positions.length, 0);
+  assert.equal(closed.ledger.orders.some((order) => order.side === 'stop'), true);
+});
+
+test('a dump after the copied swap and before the local write closes the row', () => {
+  const opened = runCycle(emptyLedger(), { trades: trades(30, 'buy', NOW) }, NOW + 8, OUR);
+  const closed = runCycle(opened.ledger, {
+    trades: [{
+      signature: 'between',
+      address: 'WalletB',
+      side: 'sell',
+      mint: MINT,
+      blockTime: NOW + 2,
+      solLamports: 1,
+      tokenRaw: '1000000',
+    }],
+  }, NOW + 8, OUR);
+  assert.equal(closed.ledger.positions.length, 0);
 });
 
 test('a price from before the entry does not close the paper row', () => {

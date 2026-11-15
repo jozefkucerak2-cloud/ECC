@@ -204,6 +204,41 @@ test('the next poll reads the wallet that is still under 30', async () => {
   assert.deepEqual(addresses, ['WalletA']);
 });
 
+test('a filling wallet asks for signatures older than its cursor', async () => {
+  const memory = new Map();
+  memory.set('elite-desk-book', JSON.stringify({
+    version: 2,
+    wallets: {
+      WalletA: {
+        classified: 4,
+        seen: ['t1'],
+        skip: ['junk'],
+        cursor: 'old-sig',
+        last: { signature: 't1', side: 'buy', mint: 'Mint', blockTime: 10 },
+      },
+    },
+  }));
+  const storage = {
+    getItem: (key) => memory.get(key) || null,
+    setItem: (key, value) => memory.set(key, value),
+  };
+  const pages = [];
+  const desk = createBrowserDesk({
+    auto: false,
+    storage,
+    fetch: async (_url, init) => {
+      const body = JSON.parse(init.body);
+      if (body.method === 'getSignaturesForAddress') {
+        pages.push(body.params[1]);
+      }
+      return json({ result: [] });
+    },
+  });
+  desk.connectRpc({ key1: KEY });
+  await desk.tick();
+  assert.equal(pages[0].before, 'old-sig');
+});
+
 test('a browser desk keeps a public Phantom address', () => {
   const desk = createBrowserDesk({ auto: false });
   const address = 'So11111111111111111111111111111111111111112';

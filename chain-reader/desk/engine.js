@@ -2,11 +2,7 @@
 var EliteEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
-    try {
-      return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-    } catch (e) {
-      throw mod = 0, e;
-    }
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
   };
 
   // chain-reader/src/config.js
@@ -364,6 +360,7 @@ var EliteEngine = (() => {
           calls,
           examined,
           sample: fetched >= config.minCleanSample ? "ok" : "insufficient",
+          startedBefore: options.before || null,
           nextCursor: cursor,
           wallets,
           trades
@@ -513,14 +510,14 @@ var EliteEngine = (() => {
       function focusAddress(raw, nowSeconds) {
         const ledger = loadLedger(raw);
         const rows = rankWallets(ledger.wallets);
-        const filling = rows.filter((row) => row.classified < LIMITS.minTraderSamples && row.seen.length < LIMITS.seenCap);
+        const filling = rows.filter((row) => row.classified < LIMITS.minTraderSamples && !row.exhausted);
         if (filling.length > 0) {
-          return { address: filling[0].address, seen: filling[0].seen.slice() };
+          return { address: filling[0].address, seen: skipSet(filling[0]), before: filling[0].cursor };
         }
         const now = Number.isInteger(nowSeconds) ? nowSeconds : 0;
         const stale = rows.filter((row) => row.classified >= LIMITS.minTraderSamples && tradeAge(row.last, now) > LIMITS.maxEventAgeSec);
         if (stale.length > 0) {
-          return { address: stale[0].address, seen: stale[0].seen.slice() };
+          return { address: stale[0].address, seen: skipSet(stale[0]), before: null };
         }
         return null;
       }
@@ -559,12 +556,16 @@ var EliteEngine = (() => {
             return wallets;
           }
           const seen = Array.isArray(row.seen) ? row.seen.filter((item) => typeof item === "string").slice(0, LIMITS.seenCap) : [];
+          const skip = Array.isArray(row.skip) ? row.skip.filter((item) => typeof item === "string").slice(0, LIMITS.seenCap) : [];
           const classified = Number.isInteger(row.classified) ? row.classified : seen.length;
           return {
             ...wallets,
             [address]: {
               classified,
               seen,
+              skip,
+              cursor: typeof row.cursor === "string" && row.cursor ? row.cursor : null,
+              exhausted: Boolean(row.exhausted),
               last: row.last && typeof row.last === "object" ? { ...row.last } : null
             }
           };
@@ -577,7 +578,7 @@ var EliteEngine = (() => {
         if (trade.side !== "buy" && trade.side !== "sell") {
           return wallets;
         }
-        const prior = wallets[trade.address] || { classified: 0, seen: [], last: null };
+        const prior = wallets[trade.address] || blankWallet();
         if (prior.seen.includes(trade.signature)) {
           return wallets;
         }
@@ -585,28 +586,61 @@ var EliteEngine = (() => {
         const last = !prior.last || (trade.blockTime || 0) >= (prior.last.blockTime || 0) ? compactTrade(trade) : prior.last;
         return {
           ...wallets,
-          [trade.address]: { classified: prior.classified + 1, seen, last }
+          [trade.address]: {
+            classified: prior.classified + 1,
+            seen,
+            skip: prior.skip,
+            cursor: prior.cursor,
+            exhausted: prior.exhausted,
+            last
+          }
         };
+      }
+      function blankWallet() {
+        return { classified: 0, seen: [], skip: [], cursor: null, exhausted: false, last: null };
       }
       function markExamined(wallets, observation) {
         if (!observation || typeof observation.address !== "string" || observation.address === observation.programId) {
           return wallets;
         }
-        const examined = Array.isArray(observation.examined) ? observation.examined : [];
-        return examined.reduce((next, signature) => noteSeen(next, observation.address, signature), wallets);
-      }
-      function noteSeen(wallets, address, signature) {
-        if (typeof address !== "string" || typeof signature !== "string") {
-          return wallets;
-        }
-        const prior = wallets[address] || { classified: 0, seen: [], last: null };
-        if (prior.seen.includes(signature)) {
-          return wallets;
-        }
+        const examined = Array.isArray(observation.examined) ? observation.examined.filter((item) => typeof item === "string") : [];
+        const prior = wallets[observation.address] || blankWallet();
+        const walkingOlder = typeof observation.startedBefore === "string" && observation.startedBefore.length > 0;
+        const cursor = examined.length > 0 && (!prior.cursor || walkingOlder) ? examined[examined.length - 1] : prior.cursor;
         return {
           ...wallets,
-          [address]: { ...prior, seen: rememberSignature(prior.seen, signature) }
+          [observation.address]: {
+            ...prior,
+            skip: walkingOlder ? prior.skip : rememberTip(prior.skip, examined),
+            cursor,
+            exhausted: prior.exhausted || walkingOlder && examined.length === 0
+          }
         };
+      }
+      function rememberTip(skip, examined) {
+        const prior = Array.isArray(skip) ? skip : [];
+        const known = new Set(prior);
+        const fresh = [];
+        for (const signature of examined) {
+          if (!known.has(signature)) {
+            known.add(signature);
+            fresh.push(signature);
+          }
+        }
+        return fresh.concat(prior).slice(0, LIMITS.seenCap);
+      }
+      function skipSet(row) {
+        const skip = Array.isArray(row.skip) ? row.skip : [];
+        const seen = Array.isArray(row.seen) ? row.seen : [];
+        const known = /* @__PURE__ */ new Set();
+        const merged = [];
+        for (const signature of skip.concat(seen)) {
+          if (typeof signature === "string" && !known.has(signature)) {
+            known.add(signature);
+            merged.push(signature);
+          }
+        }
+        return merged;
       }
       function rememberSignature(seen, signature) {
         if (seen.length >= LIMITS.seenCap) {
@@ -630,6 +664,9 @@ var EliteEngine = (() => {
           address,
           classified: row.classified,
           seen: row.seen,
+          skip: row.skip || [],
+          cursor: row.cursor || null,
+          exhausted: Boolean(row.exhausted),
           last: row.last
         })).sort((a, b) => b.classified - a.classified || a.address.localeCompare(b.address));
       }
@@ -718,7 +755,8 @@ var EliteEngine = (() => {
             units: order.units,
             entryPrice: order.entryPrice,
             stopPrice: order.stopPrice,
-            openedAt: nowSeconds
+            openedAt: nowSeconds,
+            entryBlockTime: Number.isInteger(order.blockTime) ? order.blockTime : nowSeconds
           });
         }
         if (order.side === "sell") {
@@ -748,7 +786,10 @@ var EliteEngine = (() => {
           if (!Number.isInteger(trade.blockTime)) {
             continue;
           }
-          const hitting = positions.filter((position) => position.mint === trade.mint && position.stopPrice != null && price <= position.stopPrice && Number.isInteger(position.openedAt) && trade.blockTime > position.openedAt);
+          const hitting = positions.filter((position) => {
+            const entry = entryTime(position);
+            return position.mint === trade.mint && position.stopPrice != null && price <= position.stopPrice && entry != null && trade.blockTime >= entry;
+          });
           if (hitting.length === 0) {
             continue;
           }
@@ -767,6 +808,12 @@ var EliteEngine = (() => {
           })));
         }
         return { ledger: { ...ledger, positions, orders }, closed };
+      }
+      function entryTime(position) {
+        if (Number.isInteger(position.entryBlockTime)) {
+          return position.entryBlockTime;
+        }
+        return Number.isInteger(position.openedAt) ? position.openedAt : null;
       }
       function noticeFor(closed, executed) {
         if (closed) {
@@ -993,7 +1040,8 @@ var EliteEngine = (() => {
                 limit: 30,
                 budget: POLL_CREDITS,
                 address: focus ? focus.address : void 0,
-                seen: focus ? focus.seen : []
+                seen: focus ? focus.seen : [],
+                before: focus && focus.before ? focus.before : void 0
               });
               remember(slot, calls);
               if (token !== generation) {

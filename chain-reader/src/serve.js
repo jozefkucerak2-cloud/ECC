@@ -163,7 +163,7 @@ function createDesk(options = {}) {
       signal: controller.signal,
       discoverOptions() {
         const focus = focusAddress(readPaper(paperFile), Math.floor(Date.now() / 1000));
-        return focus ? { address: focus.address, seen: focus.seen } : {};
+        return focus ? { address: focus.address, seen: focus.seen, before: focus.before || undefined } : {};
       },
       onResult(result) {
         if (state.token !== token || controller.signal.aborted) {

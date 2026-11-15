@@ -83,6 +83,7 @@ async function discoverRecentWallets(config, options = {}) {
     calls,
     examined,
     sample: fetched >= config.minCleanSample ? 'ok' : 'insufficient',
+    startedBefore: options.before || null,
     nextCursor: cursor,
     wallets,
     trades,

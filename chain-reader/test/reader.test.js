@@ -161,6 +161,7 @@ test('a page of already seen signatures walks to the older page', async () => {
   assert.deepEqual(fetched, ['older']);
   assert.equal(found.examined.includes('older'), true);
   assert.equal(found.examined.includes('known'), false);
+  assert.equal(found.startedBefore, null);
 });
 
 test('fee payer accepts a legacy string account key', () => {
