@@ -395,32 +395,58 @@ function scrub(error, secrets) {
 }
 
 async function watchPool(pool, options = {}) {
-  const sleep = options.sleep || ((ms) => new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  }));
   const signal = options.signal || { aborted: false };
+  const sleep = options.sleep || ((ms, current) => cancellableSleep(ms, current || signal));
   while (!signal.aborted) {
     if (typeof pool.refreshUsage === 'function') {
       await pool.refreshUsage();
     }
+    if (signal.aborted) {
+      break;
+    }
     const wait = pool.msUntilPoll ? pool.msUntilPoll() : pool.msUntil('getSignaturesForAddress');
     if (wait > 0) {
-      await sleep(wait);
+      await sleep(wait, signal);
       continue;
     }
     try {
       const result = await pool.discover();
+      if (signal.aborted) {
+        break;
+      }
       if (options.onResult) {
         options.onResult(result);
       }
     } catch (error) {
+      if (signal.aborted) {
+        break;
+      }
       if (error.category !== 'safe mode' && error.category !== 'retry') {
         throw error;
       }
       const waitMs = error.details && error.details.waitMs;
-      await sleep(waitMs > 0 ? waitMs : 1000);
+      await sleep(waitMs > 0 ? waitMs : 1000, signal);
     }
   }
+}
+
+function cancellableSleep(ms, signal) {
+  if (!ms || ms <= 0 || (signal && signal.aborted)) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(finish, ms);
+    function finish() {
+      clearTimeout(timer);
+      if (signal && typeof signal.removeEventListener === 'function') {
+        signal.removeEventListener('abort', finish);
+      }
+      resolve();
+    }
+    if (signal && typeof signal.addEventListener === 'function') {
+      signal.addEventListener('abort', finish, { once: true });
+    }
+  });
 }
 
 module.exports = {

@@ -52,6 +52,65 @@ test('start without keys is refused and the page is served', async () => {
   }
 });
 
+test('a bad limit stays visible after start fails', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const desk = createDesk({
+    env: {
+      HELIUS_API_KEY_1: KEY,
+      ELITE_SOLANA_RPC_URL: 'https://rpc.example',
+      ELITE_SIGNATURE_LIMIT: '5',
+      ELITE_MIN_CLEAN_SAMPLE: '30',
+    },
+    paperPath: path.join(directory, 'paper.json'),
+  });
+  await assert.rejects(() => desk.start(), (error) => error.statusCode === 400);
+  assert.match(desk.snapshot().error, /minCleanSample/);
+  assert.equal(desk.snapshot().running, false);
+  assert.equal(JSON.stringify(desk.snapshot()).includes(KEY), false);
+});
+
+test('a second start waits until the first loop has stopped', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  let active = 0;
+  let peak = 0;
+  const desk = createDesk({
+    env: {
+      HELIUS_API_KEY_1: KEY,
+      ELITE_SOLANA_RPC_URL: 'https://rpc.example',
+    },
+    paperPath: path.join(directory, 'paper.json'),
+    createPool: () => ({
+      async refreshUsage() {},
+      msUntilPoll() {
+        return 0;
+      },
+      async discover() {
+        return { trades: [], wallets: [], fetchedSignatures: 0, skipped: 0, sample: 'insufficient' };
+      },
+    }),
+    watch: async (_pool, options) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => {
+        if (options.signal.aborted) {
+          resolve();
+          return;
+        }
+        options.signal.addEventListener('abort', resolve, { once: true });
+      });
+      active -= 1;
+    },
+  });
+  await desk.start();
+  const stopping = desk.halt();
+  await desk.start();
+  await stopping;
+  assert.equal(peak, 1);
+  assert.equal(active, 1);
+  await desk.halt();
+  assert.equal(active, 0);
+});
+
 test('kill keeps the paper book and does not echo a key', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
   const desk = createDesk({

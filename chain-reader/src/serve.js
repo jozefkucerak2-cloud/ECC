@@ -21,6 +21,17 @@ const ROLES = Object.freeze([
   { id: 'wallet', name: 'Phantom', detail: 'Peňaženka nie je pripojená' },
 ]);
 
+function publicError(error, env) {
+  let text = String(error && error.message ? error.message : 'štart zlyhal');
+  for (const index of [1, 2, 3]) {
+    const secret = env[`HELIUS_API_KEY_${index}`];
+    if (secret) {
+      text = text.split(String(secret)).join('[redacted]');
+    }
+  }
+  return text;
+}
+
 function present(value) {
   return Boolean(value && String(value).trim());
 }
@@ -45,6 +56,8 @@ function createDesk(options = {}) {
     decision: 'bez príkazu',
     halted: false,
     controller: null,
+    loop: null,
+    token: null,
   };
 
   function snapshot() {
@@ -68,29 +81,50 @@ function createDesk(options = {}) {
     if (state.running) {
       return snapshot();
     }
+    if (state.loop) {
+      await state.loop;
+    }
+    if (state.running) {
+      return snapshot();
+    }
     if (!keyPresence(env).some(Boolean)) {
       state.error = 'Helius kľúče nie sú v prostredí tohto procesu';
       const error = new Error(state.error);
       error.statusCode = 409;
       throw error;
     }
-    const config = loadConfig(env);
-    const pool = createPool(env, {
-      usagePath: env.HELIUS_USAGE_PATH || path.join(__dirname, '..', 'data', 'helius-usage.json'),
-      signatureLimit: config.signatureLimit,
-      minCleanSample: config.minCleanSample,
-      timeoutMs: config.timeoutMs,
-      programId: config.programId,
-      fetch: options.fetch,
-      now: options.now,
-    });
-    const signal = { aborted: false };
-    state.controller = signal;
+    let config;
+    let pool;
+    try {
+      config = loadConfig(env);
+      pool = createPool(env, {
+        usagePath: env.HELIUS_USAGE_PATH || path.join(__dirname, '..', 'data', 'helius-usage.json'),
+        signatureLimit: config.signatureLimit,
+        minCleanSample: config.minCleanSample,
+        timeoutMs: config.timeoutMs,
+        programId: config.programId,
+        fetch: options.fetch,
+        now: options.now,
+      });
+    } catch (error) {
+      state.running = false;
+      state.error = publicError(error, env);
+      const wrapped = new Error(state.error);
+      wrapped.statusCode = error.statusCode || (error.name === 'ConfigError' ? 400 : 500);
+      throw wrapped;
+    }
+    const token = Symbol('loop');
+    const controller = new AbortController();
+    state.token = token;
+    state.controller = controller;
     state.running = true;
     state.error = null;
-    watch(pool, {
-      signal,
+    state.loop = watch(pool, {
+      signal: controller.signal,
       onResult(result) {
+        if (state.token !== token || controller.signal.aborted) {
+          return;
+        }
         const cycle = runCycle(readPaper(paperFile), result, Math.floor(Date.now() / 1000));
         writePaper(paperFile, cycle.ledger);
         state.last = publicResult(result);
@@ -98,17 +132,32 @@ function createDesk(options = {}) {
         state.halted = cycle.ledger.halted;
       },
     }).catch((error) => {
+      if (state.token !== token) {
+        return;
+      }
+      state.error = publicError(error, env);
+    }).finally(() => {
+      if (state.token !== token) {
+        return;
+      }
       state.running = false;
-      state.error = String(error && error.message ? error.message : 'čítanie zlyhalo');
+      state.loop = null;
     });
     return snapshot();
   }
 
-  function halt() {
+  async function halt() {
+    const token = state.token;
     if (state.controller) {
-      state.controller.aborted = true;
+      state.controller.abort();
     }
     state.running = false;
+    if (state.loop) {
+      await state.loop;
+    }
+    if (state.token === token) {
+      state.loop = null;
+    }
     return snapshot();
   }
 
@@ -188,7 +237,7 @@ function createServer(desk) {
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/stop') {
-        sendJson(response, 200, desk.halt());
+        sendJson(response, 200, await desk.halt());
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/kill') {
