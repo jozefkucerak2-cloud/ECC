@@ -54,6 +54,9 @@ test('start without keys is refused and the page is served', async () => {
     assert.match(html, /secretsForProcess/);
     assert.match(html, /Paper 50 USD/);
     assert.match(html, /Zostatok/);
+    assert.match(html, /id="status" aria-live="polite"/);
+    assert.match(html, /@media \(max-width: 980px\)[\s\S]*\.metrics\.money \{ grid-template-columns: 1fr 1fr; \}/);
+    assert.match(html, /@media \(max-width: 640px\)[\s\S]*\.metrics\.money, \.metrics\.tight \{ grid-template-columns: 1fr; \}/);
     assert.match(html, /Otvorené pozície/);
     assert.match(html, /Zatvorené pozície/);
     assert.match(html, /Koho sledujeme/);

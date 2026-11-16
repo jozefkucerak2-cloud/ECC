@@ -183,14 +183,14 @@
       .body { display: flex; flex-direction: column; }
       .work { order: -1; }
       aside { border-right: 0; border-top: 1px solid var(--line); }
-      .split, .metrics, .gates { grid-template-columns: 1fr 1fr; }
+      .split, .metrics, .gates, .metrics.money { grid-template-columns: 1fr 1fr; }
       header { flex-wrap: wrap; align-items: center; }
       .clock { margin-left: 0; }
       .stage-head { flex-direction: column; align-items: stretch; }
       .actions button { flex: 1 1 140px; }
     }
     @media (max-width: 640px) {
-      .metrics, .split, .gates { grid-template-columns: 1fr; }
+      .metrics, .split, .gates, .metrics.money, .metrics.tight { grid-template-columns: 1fr; }
       .work { padding: 16px; }
       aside { padding-left: 16px; padding-right: 16px; }
     }
@@ -259,7 +259,7 @@
       </aside>
       <section class="work" id="card-run">
         <div class="stage-head">
-          <p id="status">Kontrolujem lokálny proces.</p>
+          <p id="status" aria-live="polite">Kontrolujem lokálny proces.</p>
           <div class="actions">
             <button class="solid" id="start" type="button">Spustiť paper</button>
             <button id="stop" type="button">Pauza</button>
