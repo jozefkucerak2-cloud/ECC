@@ -6,22 +6,21 @@
   <title>Elite</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0c0d10;
-      --panel: #15171c;
-      --panel-2: #1c1f26;
-      --ink: #f6f1e7;
-      --muted: #b7b1a6;
-      --faint: #8f897e;
-      --line: rgba(246, 241, 231, 0.12);
-      --cream: #f3ead7;
-      --cream-ink: #1a1712;
-      --moss: #c6dd9a;
-      --moss-ink: #17210f;
-      --clay: #e39a84;
-      --radius: 16px;
+      --bg: #101114;
+      --rail: #16181d;
+      --tile: #1c1f26;
+      --ink: #f4f1ea;
+      --muted: #b4b8c2;
+      --faint: #a3a9b4;
+      --line: rgba(244, 241, 234, 0.1);
+      --paper: #efe6d4;
+      --paper-ink: #1c1a16;
+      --moss: #b7d38a;
+      --clay: #e38b73;
+      --radius: 12px;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); }
@@ -34,264 +33,187 @@
     button { cursor: pointer; }
     button:disabled { opacity: 0.38; cursor: default; }
     button:focus-visible, input:focus-visible, summary:focus-visible {
-      outline: 2px solid var(--cream);
+      outline: 2px solid var(--paper);
       outline-offset: 2px;
     }
-    .app { min-height: 100vh; }
+    .app { min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
     header {
       display: flex;
       align-items: center;
       gap: 10px;
-      min-height: 58px;
-      padding: 0 32px;
+      min-height: 64px;
+      padding: 12px 20px;
+      background: #101114;
       border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 2;
     }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.03em; }
-    .mark { width: 8px; height: 8px; border-radius: 2px; background: var(--cream); }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; letter-spacing: -0.03em; }
+    .mark { width: 10px; height: 10px; border-radius: 3px; background: var(--paper); }
     .mode {
-      padding: 3px 8px;
+      margin-left: 6px;
+      padding: 4px 8px;
       border-radius: 999px;
-      background: var(--cream);
-      color: var(--cream-ink);
+      background: var(--paper);
+      color: var(--paper-ink);
       font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
+      font-weight: 600;
+      letter-spacing: 0.04em;
     }
-    .mode.kill { background: var(--clay); }
+    .mode.kill { background: var(--clay); color: #2a1210; }
     .chip {
       display: flex;
       align-items: center;
       gap: 8px;
+      min-width: 0;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--tile);
       color: var(--muted);
       font-size: 12px;
     }
     .chip b { color: var(--ink); font-weight: 600; }
-    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
     .chip.on .dot { background: var(--moss); }
-    .clock { margin-left: auto; color: var(--faint); font-variant-numeric: tabular-nums; }
-    main {
-      width: min(1120px, calc(100% - 48px));
-      margin: 0 auto;
-      padding: 36px 0 72px;
-      display: flex;
-      flex-direction: column;
-      gap: 28px;
+    .clock { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+    .body { min-height: 0; display: grid; grid-template-columns: 340px minmax(0, 1fr); }
+    aside, .work { min-height: 0; }
+    aside {
+      padding: 8px 20px 28px;
+      background: var(--rail);
+      border-right: 1px solid var(--line);
     }
-    .hero {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 24px;
-      align-items: end;
+    .group { padding: 18px 0; border-bottom: 1px solid var(--line); }
+    .group:last-child { border-bottom: 0; }
+    form { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+    .label { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.02em; }
+    .host { margin: 0; color: var(--muted); font-size: 13px; }
+    label { display: flex; justify-content: space-between; color: var(--faint); font-size: 12px; font-weight: 500; }
+    label em { font-style: normal; color: var(--muted); }
+    input {
+      width: 100%;
+      height: 40px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #12141a;
+      outline: none;
     }
-    .eyebrow {
-      margin: 0 0 10px;
-      color: var(--faint);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-    }
-    #balance {
-      display: block;
-      color: var(--cream);
-      font-family: Newsreader, Georgia, serif;
-      font-size: 76px;
-      font-weight: 500;
-      letter-spacing: -0.045em;
-      line-height: 0.9;
-    }
-    #status {
-      margin: 16px 0 0;
-      max-width: 46ch;
-      color: var(--muted);
-      font-size: 16px;
-      line-height: 1.45;
-    }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding-bottom: 6px; }
+    input:focus { border-color: rgba(239, 230, 212, 0.55); }
+    .row, .actions { display: flex; flex-wrap: wrap; gap: 8px; }
     button {
-      height: 38px;
+      height: 40px;
       padding: 0 14px;
-      border-radius: 999px;
+      border-radius: 10px;
       border: 1px solid var(--line);
       background: transparent;
       color: var(--ink);
     }
-    button.solid { background: var(--cream); color: var(--cream-ink); border-color: var(--cream); font-weight: 600; }
-    button.hot { color: var(--clay); border-color: rgba(227, 154, 132, 0.45); }
-    .statline {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
-    }
-    .metric { padding: 16px 18px 16px 0; }
-    .metric + .metric { padding-left: 18px; border-left: 1px solid var(--line); }
-    .metric small { display: block; color: var(--faint); font-size: 12px; }
-    .metric b, .metric .sub b, #locked, #sum-open, #sum-closed {
-      font-weight: 560;
-      font-variant-numeric: tabular-nums;
-    }
-    .metric b {
-      display: block;
-      margin-top: 6px;
-      font-family: Newsreader, Georgia, serif;
-      font-size: 28px;
-      letter-spacing: -0.03em;
-    }
-    .sub { display: block; margin-top: 6px; color: var(--faint); font-size: 12px; }
-    #pnl.up, #sum-profit.up, #balance.up, .rows strong.up { color: var(--moss); }
-    #pnl.down, #sum-loss.down, #balance.down, .rows strong.down { color: var(--clay); }
-    .stage { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr); gap: 22px; align-items: start; }
-    .stack-cards { display: flex; flex-direction: column; gap: 22px; }
-    .card {
-      padding: 18px 20px 8px;
-      border-radius: 18px;
-      background: transparent;
-      border: 1px solid var(--line);
-    }
-    .card.current { border-color: rgba(243, 234, 215, 0.55); }
-    .card.live { border-color: rgba(198, 221, 154, 0.55); }
-    .card-head, .block-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-    .step { margin: 0; color: var(--faint); font-size: 12px; font-weight: 700; letter-spacing: 0.12em; }
-    h2 { margin: 4px 0 12px; font-family: Newsreader, Georgia, serif; font-size: 28px; font-weight: 500; letter-spacing: -0.03em; }
-    form { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
-    .host, .fine { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-    label { display: flex; justify-content: space-between; gap: 8px; color: var(--faint); font-size: 12px; font-weight: 600; }
-    label em { font-style: normal; color: var(--muted); font-weight: 500; }
-    input {
-      width: 100%;
-      height: 42px;
-      padding: 0 12px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: #101217;
-      outline: none;
-    }
-    input:focus { border-color: rgba(243, 234, 215, 0.55); }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; }
-    .card button.solid { background: var(--cream); color: var(--cream-ink); border-color: var(--cream); }
+    button.solid { background: var(--paper); color: var(--paper-ink); border-color: var(--paper); font-weight: 600; }
+    button.hot { color: #ffd2c6; border-color: rgba(227, 139, 115, 0.55); }
+    .fine { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
     details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     details .stack { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-    code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
-    .gates { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 22px; }
-    .gates li { color: var(--faint); font-size: 13px; }
-    .gates li span { margin-right: 6px; }
-    .gates li b { color: var(--ink); font-weight: 600; }
-    .setup { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 22px; }
-    .lower { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 22px; }
-    .facts { display: grid; grid-template-columns: 1fr 1fr; margin-top: 8px; }
-    .facts .metric { padding: 10px 12px 10px 0; border: 0; }
-    .facts .metric + .metric { border: 0; padding-left: 0; }
-    .facts .metric b { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 16px; }
-    .block-head p { margin: 0; color: var(--faint); font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-    .count { color: var(--muted); font-weight: 500; font-size: 13px; letter-spacing: 0; text-transform: none; }
-    .rows, .roles { list-style: none; margin: 8px 0 0; padding: 0; }
+    code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 12px; color: var(--ink); overflow-wrap: anywhere; }
+    .work { padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 16px; }
+    .stage-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+    }
+    #status {
+      margin: 0;
+      flex: 1;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      background: var(--tile);
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .metrics.tight { grid-template-columns: 1fr 1fr; }
+    .metric { padding: 14px 16px; border-radius: var(--radius); background: var(--tile); }
+    .metric small { display: block; color: var(--faint); font-size: 12px; font-weight: 500; }
+    .metric b { display: block; margin-top: 6px; font-weight: 600; font-size: 26px; font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
+    .split { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr); gap: 28px; }
+    .block-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .block-head p { margin: 0; color: var(--faint); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+    .block-head .count { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 500; font-size: 13px; }
+    .rows, .roles { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
     .rows li, .roles li {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 2px 16px;
-      padding: 14px 0;
-      border-top: 1px solid var(--line);
+      gap: 2px 12px;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      background: var(--tile);
+      font-size: 13px;
     }
-    .rows li span, .detail { color: var(--muted); font-size: 13px; }
-    .detail { grid-column: 1 / -1; }
+    .rows li span, .detail { color: var(--muted); }
+    .detail { grid-column: 1 / -1; line-height: 1.45; }
     .tag {
       justify-self: end;
+      align-self: start;
       font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
+      font-weight: 600;
+      letter-spacing: 0.03em;
       text-transform: uppercase;
       color: var(--faint);
     }
-    .tag.live { color: var(--moss-ink); background: var(--moss); padding: 3px 7px; border-radius: 999px; }
-    .empty { margin: 8px 0 12px; color: var(--muted); }
-    .lane { grid-column: 1 / -1; height: 3px; margin-top: 10px; border-radius: 999px; background: rgba(246, 241, 231, 0.08); overflow: hidden; }
-    .lane span { display: block; height: 100%; background: var(--cream); }
-    #program { overflow-wrap: anywhere; }
-    @media (max-width: 900px) {
-      header { padding: 12px 16px; flex-wrap: wrap; }
-      main { width: min(1120px, calc(100% - 32px)); }
-      .hero, .stage, .setup, .lower, .statline { grid-template-columns: 1fr; }
-      .metric + .metric { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
-      .actions { justify-content: flex-start; }
-      #balance { font-size: 56px; }
+    .tag.live { color: #17210f; background: var(--moss); padding: 3px 7px; border-radius: 999px; }
+    .empty { margin: 10px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .rows li .lane { grid-column: 1 / -1; height: 4px; margin-top: 8px; border-radius: 999px; background: rgba(244, 241, 234, 0.08); overflow: hidden; }
+    .lane span { display: block; height: 100%; background: var(--paper); }
+    .gates { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+    .gates li { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: var(--radius); background: var(--tile); }
+    .gates li span { color: var(--faint); font-size: 12px; }
+    .gates li b { font-weight: 600; font-size: 14px; }
+    #program, .host { overflow-wrap: anywhere; }
+    .metrics.money { grid-template-columns: 1.25fr repeat(4, minmax(0, 1fr)); }
+    .sub { display: block; margin-top: 6px; color: var(--faint); font-size: 12px; font-weight: 500; }
+    #pnl.up, #sum-profit.up, #balance.up, .rows strong.up { color: var(--moss); }
+    #pnl.down, #sum-loss.down, #balance.down, .rows strong.down { color: var(--clay); }
+
+    @media (max-width: 980px) {
+      .body { display: flex; flex-direction: column; }
+      .work { order: -1; }
+      aside { border-right: 0; border-top: 1px solid var(--line); }
+      .split, .metrics, .gates { grid-template-columns: 1fr 1fr; }
+      header { flex-wrap: wrap; align-items: center; }
       .clock { margin-left: 0; }
+      .stage-head { flex-direction: column; align-items: stretch; }
+      .actions button { flex: 1 1 140px; }
+    }
+    @media (max-width: 640px) {
+      .metrics, .split, .gates { grid-template-columns: 1fr; }
+      .work { padding: 16px; }
+      aside { padding-left: 16px; padding-right: 16px; }
     }
     @media (prefers-reduced-motion: reduce) {
       * { scroll-behavior: auto; transition: none; }
     }
   </style>
-</head>
+
 <body>
   <div class="app">
     <header>
       <div class="brand"><span class="mark" aria-hidden="true"></span>Elite</div>
       <div class="mode" id="mode">PAPER</div>
-      <div class="chip" id="rpc-pill"><span class="dot" aria-hidden="true"></span>Helius <b id="rpc-state">nepripojené</b></div>
-      <div class="chip" id="wallet-pill"><span class="dot" aria-hidden="true"></span>Adresa <b id="wallet-state">nepripojená</b></div>
+      <div class="chip" id="rpc-pill"><span class="dot" aria-hidden="true"></span>RPC <b id="rpc-state">nepripojené</b></div>
+      <div class="chip" id="wallet-pill"><span class="dot" aria-hidden="true"></span>Peňaženka <b id="wallet-state">nepripojená</b></div>
       <div class="clock" id="clock"></div>
     </header>
-    <main>
-      <section class="hero" id="dashboard">
-        <div>
-          <p class="eyebrow">Zostatok</p>
-          <b id="balance">50,00 USD</b>
-          <p class="fine" id="dash-wallet">Paper 50 USD</p>
-          <p id="status" aria-live="polite">Kontrolujem, či beží lokálny proces.</p>
-          <p class="fine" id="review-verdict">Ďalší vyhodnotí prvý čistý obchod.</p>
-        </div>
-        <div class="actions">
-          <button class="solid" id="start" type="button">Spustiť paper</button>
-          <button id="stop" type="button">Pauza</button>
-          <button class="hot" id="kill" type="button">Kill</button>
-          <button id="release" type="button">Uvoľniť kill</button>
-        </div>
-      </section>
-      <section class="statline" aria-label="Paper súhrn">
-        <div class="metric"><small>Voľné</small><b id="free">50,00 USD</b><small class="sub">V pozíciách <span id="locked">0,00 USD</span></small></div>
-        <div class="metric"><small>Zisk</small><b id="sum-profit">0,00 USD</b></div>
-        <div class="metric"><small>Strata</small><b id="sum-loss">0,00 USD</b></div>
-        <div class="metric"><small>Čistý</small><b id="pnl">0,00 USD</b><small class="sub"><span id="sum-open">0</span> otvorených · <span id="sum-closed">0</span> zatvorených</small></div>
-      </section>
-      <section class="stage">
-        <article class="card" id="card-run">
-          <div class="block-head"><p>Koho sledujeme</p><p class="count" id="ladder-count">0 / 30</p></div>
-          <p class="empty" id="ladder-empty">Zatiaľ nikoho. Rebríček vznikne z prvého čistého obchodu.</p>
-          <ul class="rows" id="ladder"></ul>
-        </article>
-        <div class="stack-cards">
-          <article class="card">
-            <div class="block-head"><p>Otvorené pozície</p><p class="count" id="open-count">0</p></div>
-            <p class="empty" id="open-empty">Žiadna otvorená pozícia.</p>
-            <ul class="rows" id="positions"></ul>
-          </article>
-          <article class="card">
-            <div class="block-head"><p>Zatvorené pozície</p><p class="count" id="trade-count">0</p></div>
-            <p class="empty" id="rounds-empty">Zatiaľ žiadna zatvorená pozícia.</p>
-            <p class="fine" id="closed-note" hidden>Na ploche je len posledných dvanásť.</p>
-            <ul class="rows" id="rounds"></ul>
-          </article>
-        </div>
-      </section>
-      <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
-      <p class="fine" id="live-gate">Live odoslanie nie je zapnuté. Jeden príkaz je 50 USD a ďalší čaká, kým sa voľné peniaze uvoľnia.</p>
-      <ul class="gates" id="gates">
-        <li><span>01 · Kde beží</span><b id="gate-local">kontrolujem</b></li>
-        <li><span>02 · Helius</span><b id="gate-rpc">kontrolujem</b></li>
-        <li><span>03 · Slučka</span><b id="gate-loop">kontrolujem</b></li>
-        <li><span>04 · Vzorka</span><b id="gate-sample">kontrolujem</b></li>
-        <li><span>05 · Sieť</span><b id="gate-send">nič sa neposiela</b></li>
-      </ul>
-      <section class="setup">
-        <article class="card current" id="card-helius">
-          <div class="card-head">
-            <div>
-              <p class="step">KROK 1</p>
-              <h2>Helius kľúč</h2>
-            </div>
-            <p class="host" id="endpoint">mainnet.helius-rpc.com</p>
-          </div>
+    <div class="body">
+      <aside>
+        <div class="group" id="card-helius">
           <form id="rpc-form">
+            <p class="label">Helius RPC</p>
+            <p class="host" id="endpoint">mainnet.helius-rpc.com</p>
             <label for="key1">Kľúč 1 <em id="slot1">prázdny</em></label>
             <input id="key1" name="key1" type="password" autocomplete="off" spellcheck="false" placeholder="kľúč alebo celá Helius adresa">
             <label for="key2">Kľúč 2 <em id="slot2">prázdny</em></label>
@@ -299,7 +221,7 @@
             <label for="key3">Kľúč 3 <em id="slot3">prázdny</em></label>
             <input id="key3" name="key3" type="password" autocomplete="off" spellcheck="false">
             <details>
-              <summary>ID projektov, voliteľné</summary>
+              <summary>ID projektov</summary>
               <div class="stack">
                 <label for="project1">ID projektu 1</label>
                 <input id="project1" name="project1" autocomplete="off" spellcheck="false">
@@ -310,67 +232,106 @@
               </div>
             </details>
             <div class="row">
-              <button class="solid" id="save-rpc" type="submit">Uložiť kľúč</button>
+              <button class="solid" id="save-rpc" type="submit">Pripojiť RPC</button>
             </div>
-            <p class="fine" id="saved-keys">Zatiaľ žiadny kľúč. Po uložení ostane v lokálnom procese a na ploche sa neukáže.</p>
+            <p class="fine" id="saved-keys">Vlož Helius kľúč alebo celú adresu mainnet.helius-rpc.com. Kľúč sa do stavu nevracia a súkromný kľúč peňaženky sa odmieta.</p>
           </form>
-        </article>
-        <article class="card" id="card-wallet">
-          <div class="card-head">
-            <div>
-              <p class="step">KROK 2</p>
-              <h2>Verejná adresa</h2>
-            </div>
-          </div>
+        </div>
+        <div class="group" id="card-wallet">
           <form id="wallet-form">
-            <label for="address">Adresa, ktorej patria paper príkazy</label>
-            <input id="address" name="address" autocomplete="off" spellcheck="false" placeholder="vlož verejnú adresu">
+            <p class="label">Phantom</p>
             <div class="row">
-              <button class="solid" id="save-wallet" type="submit">Uložiť adresu</button>
-              <button id="phantom" type="button">Phantom</button>
+              <button class="solid" id="phantom" type="button">Pripojiť Phantom</button>
               <button id="disconnect" type="button">Odpojiť</button>
             </div>
-            <p class="fine" id="saved-wallet">Zatiaľ žiadna adresa. Súkromný kľúč sa neprijíma a Phantom nič nepodpisuje.</p>
+            <label for="address">Verejná adresa</label>
+            <input id="address" name="address" autocomplete="off" spellcheck="false" placeholder="verejná adresa">
+            <div class="row">
+              <button id="save-wallet" type="submit">Uložiť adresu</button>
+            </div>
+            <p class="fine" id="saved-wallet">Pripája sa len verejná adresa. Podpis a odoslanie transakcie tu nie sú.</p>
           </form>
-        </article>
-      </section>
-      <section class="lower">
-        <article class="card">
-          <div class="block-head"><p>Kniha</p><p class="count" id="book-count">0 pozícií</p></div>
-          <div class="facts">
-            <div class="metric"><small>Vzorka</small><b id="lim-sample">30</b></div>
-            <div class="metric"><small>Sviežosť</small><b id="lim-age">60 s</b></div>
-            <div class="metric"><small>Pozície</small><b id="lim-pos">0 / 3</b></div>
-            <div class="metric"><small>Dnes</small><b id="lim-day">0 / 10</b></div>
+        </div>
+        <div class="group">
+          <p class="label">Lokálny proces</p>
+          <p class="fine"><code>node chain-reader/src/serve.js</code><br><code>http://127.0.0.1:8787</code><br>Nočný beh je tento proces na stroji, ktorý nespí. Hostená karta po zatvorení prestane.</p>
+        </div>
+      </aside>
+      <section class="work" id="card-run">
+        <div class="stage-head">
+          <p id="status">Kontrolujem lokálny proces.</p>
+          <div class="actions">
+            <button class="solid" id="start" type="button">Spustiť paper</button>
+            <button id="stop" type="button">Pauza</button>
+            <button class="hot" id="kill" type="button">Kill</button>
+            <button id="release" type="button">Uvoľniť kill</button>
           </div>
-          <p class="empty" id="book-empty">Žiadna paper pozícia.</p>
-          <ul class="rows" id="orders"></ul>
-          <div class="block-head" style="margin-top:18px"><p>Posledné kolo</p></div>
-          <div class="facts">
-            <div class="metric"><small>Vzorka</small><b id="sample">čaká</b></div>
-            <div class="metric"><small>Peňaženky</small><b id="wallets">0</b></div>
-            <div class="metric"><small>Podpisy</small><b id="fetched">0</b></div>
-            <div class="metric"><small>Kredity</small><b id="credits">čaká</b></div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><small>Čistá vzorka</small><b id="lim-sample">30</b></div>
+          <div class="metric"><small>Sviežosť</small><b id="lim-age">60 s</b></div>
+          <div class="metric"><small>Pozície</small><b id="lim-pos">0 / 3</b></div>
+          <div class="metric"><small>Príkazy dnes</small><b id="lim-day">0 / 10</b></div>
+        </div>
+        <div class="metrics money" id="dashboard">
+          <div class="metric"><small>Zostatok</small><b id="balance">50,00 USD</b><small class="sub" id="dash-wallet">Paper 50 USD</small></div>
+          <div class="metric"><small>Voľné</small><b id="free">50,00 USD</b><small class="sub">V pozíciách <span id="locked">0,00 USD</span></small></div>
+          <div class="metric"><small>Zisk</small><b id="sum-profit">0,00 USD</b></div>
+          <div class="metric"><small>Strata</small><b id="sum-loss">0,00 USD</b></div>
+          <div class="metric"><small>Čistý</small><b id="pnl">0,00 USD</b><small class="sub"><span id="sum-open">0</span> otvorených · <span id="sum-closed">0</span> zatvorených</small></div>
+        </div>
+        <p class="fine" id="review-verdict">Ďalší vyhodnotí prvý čistý obchod.</p>
+        <ul class="gates" id="gates">
+          <li><span>Lokálny proces</span><b id="gate-local">kontrolujem</b></li>
+          <li><span>Helius</span><b id="gate-rpc">kontrolujem</b></li>
+          <li><span>Paper slučka</span><b id="gate-loop">kontrolujem</b></li>
+          <li><span>Čistá vzorka</span><b id="gate-sample">kontrolujem</b></li>
+          <li><span>Odoslanie transakcie</span><b id="gate-send">nie je v tomto behu</b></li>
+        </ul>
+        <div>
+          <div class="block-head"><p>Koho sledujeme</p><p class="count" id="ladder-count">0 / 30</p></div>
+          <p class="empty" id="ladder-empty">Žiadny čistý obchod. Rebríček sa plní z načítanej reťaze, návrh až pri 30.</p>
+          <ul class="rows" id="ladder"></ul>
+        </div>
+        <div class="split">
+          <div>
+            <div class="block-head"><p>Otvorené pozície</p><p class="count" id="open-count">0</p></div>
+            <p class="empty" id="open-empty">Žiadna otvorená pozícia.</p>
+            <ul class="rows" id="positions"></ul>
+            <div class="block-head" style="margin-top:22px"><p>Zatvorené pozície</p><p class="count" id="trade-count">0</p></div>
+            <p class="empty" id="rounds-empty">Zatiaľ žiadna zatvorená pozícia.</p>
+            <p class="fine" id="closed-note" hidden>Na ploche je len posledných dvanásť.</p>
+            <ul class="rows" id="rounds"></ul>
+            <p class="empty" id="book-empty">Žiadna paper pozícia. Zápis príde až po 30 čistých obchodoch jednej peňaženky.</p>
+            <ul class="rows" id="orders"></ul>
+            <div class="block-head" style="margin-top:22px"><p>Posledné kolo</p><p class="count" id="decision">bez príkazu</p></div>
+            <div class="metrics tight">
+              <div class="metric"><small>Vzorka</small><b id="sample">čaká</b></div>
+              <div class="metric"><small>Peňaženky</small><b id="wallets">0</b></div>
+              <div class="metric"><small>Podpisy</small><b id="fetched">0</b></div>
+              <div class="metric"><small>Kredity</small><b id="credits">čaká</b></div>
+            </div>
+            <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
+            <p class="fine" id="live-gate">Live odoslanie nie je zapnuté. Paper peňaženka je 50 USD.</p>
+            <p class="fine" id="program">Program pump 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P.</p>
           </div>
-          <p class="fine" id="program">Program pump 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P.</p>
-        </article>
-        <article class="card">
-          <div class="block-head"><p>Tím</p><p class="count" id="key-count">0 / 3 kľúčov</p></div>
-          <ol class="roles" id="roles">
-            <li><strong>Čítač</strong><span class="tag">pripravený</span><span class="detail">Číta len s pripojenou verejnou adresou.</span></li>
-            <li><strong>Analytik</strong><span class="tag">pripravený</span><span class="detail">Návrh vznikne až pri 30 čistých obchodoch.</span></li>
-            <li><strong>Skeptik</strong><span class="tag">pripravený</span><span class="detail">Zamietne vzorku pod 30 a udalosť staršiu ako 60 sekúnd.</span></li>
-            <li><strong>CEO</strong><span class="tag">pripravený</span><span class="detail">Limity nemení a veto neprepíše.</span></li>
-            <li><strong>Risk governor</strong><span class="tag">pripravený</span><span class="detail">Najviac 3 pozície a 10 príkazov za deň. Stop je 15 %.</span></li>
-            <li><strong>Executor</strong><span class="tag">pripravený</span><span class="detail">Zapíše paper príkaz. Na sieť nič neposiela.</span></li>
-            <li><strong>Vyhodnotenie</strong><span class="tag">pripravený</span><span class="detail">Pozrie, koho sledujeme, ktoré transakcie prebehli a či je to zisk alebo strata.</span></li>
-            <li><strong>Hlásenie</strong><span class="tag">pripravený</span><span class="detail">Riadok na tejto ploche. Telefón nie je zapojený.</span></li>
-            <li><strong>Phantom</strong><span class="tag">nepripojená</span><span class="detail">Live podpis v tomto behu nie je.</span></li>
-          </ol>
-        </article>
+          <div>
+            <div class="block-head"><p>Tím</p><p class="count" id="key-count">0 / 3 kľúčov</p></div>
+            <ol class="roles" id="roles">
+              <li><strong>Čítač</strong><span class="tag">pripravený</span><span class="detail">Najprv špička programu, potom vlastné podpisy peňaženky, ktorá ešte nemá 30 čistých obchodov. Jedno kolo má strop 31 volaní.</span></li>
+              <li><strong>Analytik</strong><span class="tag">pripravený</span><span class="detail">Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.</span></li>
+              <li><strong>Skeptik</strong><span class="tag">pripravený</span><span class="detail">Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.</span></li>
+              <li><strong>CEO</strong><span class="tag">pripravený</span><span class="detail">Návrh posunie ďalej. Limity nezmení a veto neprepíše.</span></li>
+              <li><strong>Risk governor</strong><span class="tag">pripravený</span><span class="detail">Pustí paper príkaz za 50 USD len na pripojenú verejnú adresu. Druhý čaká, kým sa voľné peniaze uvoľnia.</span></li>
+              <li><strong>Executor</strong><span class="tag">pripravený</span><span class="detail">Zapíše paper príkaz na našu verejnú adresu. Na sieť nič neposiela.</span></li>
+              <li><strong>Vyhodnotenie</strong><span class="tag">pripravený</span><span class="detail">Pozrie, koho sledujeme, ktoré pozície sú otvorené alebo zatvorené a či je to zisk alebo strata.</span></li>
+              <li><strong>Hlásenie</strong><span class="tag">pripravený</span><span class="detail">Samostatný riadok na tejto ploche. Telefón sa zapojí až po zvolení kanála.</span></li>
+              <li><strong>Phantom</strong><span class="tag">nepripojená</span><span class="detail">Ostáva odpojená. Live podpis nie je v tomto behu.</span></li>
+            </ol>
+          </div>
+        </div>
       </section>
-      <p class="fine">Nočný beh je lokálny proces: <code>node chain-reader/src/serve.js</code> a potom <code>http://127.0.0.1:8787</code>. Karta v prehliadači po zatvorení prestane. Na sieť sa nič neposiela.</p>
-    </main>
+    </div>
   </div>
   <script src="/engine.js"></script>
   <script>
@@ -643,7 +604,7 @@
       text('gate-rpc', connected ? connected + ' / 3 kľúčov' : 'chýba kľúč');
       text('gate-loop', data.running ? 'beží' : (data.halted ? 'kill drží pozície' : 'stojí'));
       text('gate-sample', best + ' / ' + need);
-      text('gate-send', 'nič sa neposiela');
+      text('gate-send', 'nie je v tomto behu');
       if (data.error && !(localNote && Date.now() < noteUntil)) {
         localNote = '';
         text('status', data.error);
@@ -658,7 +619,7 @@
       } else if (data.halted) {
         text('status', 'Kill drží otvorené pozície. Uvoľnenie ich nezatvára.');
       } else if (!connected) {
-        text('status', 'Vlož Helius kľúč v kroku 1 a ulož ho.');
+        text('status', 'Chýba aspoň jeden Helius kľúč.');
       } else if (!data.wallet) {
         text('status', 'Kľúč je uložený. V kroku 2 vlož verejnú adresu, potom spusti paper.');
       } else {
@@ -679,7 +640,7 @@
       text('gate-rpc', 'nedostupné');
       text('gate-loop', 'nedostupné');
       text('gate-sample', 'nedostupné');
-      text('gate-send', 'nič sa neposiela');
+      text('gate-send', 'nie je v tomto behu');
     }
 
     async function readStatus() {
