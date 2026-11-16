@@ -7,29 +7,34 @@ const path = require('node:path');
 const { loadConfig } = require('./config');
 const { createHeliusPool, watchPool } = require('./helius');
 const { parseHeliusKey } = require('./helius-key');
-const { LIMITS, emptyLedger, haltLedger, loadLedger, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
+const { LIMITS, emptyLedger, evaluateBook, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, runCycle, summarizePaper, traderLadder } = require('./paper/cycle');
 
 const DESK_FILE = path.join(__dirname, '..', 'desk', 'index.html');
 const ENGINE_FILE = path.join(__dirname, '..', 'desk', 'engine.js');
 
 const ROLES = Object.freeze([
-  { id: 'reader', name: 'Čítač', detail: 'Číta posledných 30 podpisov programu pump a z pohybov zostatkov určí buy alebo sell.' },
+  { id: 'reader', name: 'Čítač', detail: 'Číta len s pripojenou verejnou adresou. Najprv peňaženku pod 30, potom čerstvý signál, inak len nové podpisy špičky programu. Jedno kolo má strop 31 volaní.' },
   { id: 'analyst', name: 'Analytik', detail: 'Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.' },
   { id: 'skeptic', name: 'Skeptik', detail: 'Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.' },
   { id: 'ceo', name: 'CEO', detail: 'Návrh posunie ďalej. Limity nezmení a veto neprepíše.' },
-  { id: 'risk', name: 'Risk governor', detail: 'Pustí príkaz len do 3 otvorených pozícií a 10 príkazov za UTC deň.' },
-  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz do knihy. Na sieť nič neposiela.' },
-  { id: 'notifier', name: 'Hlásenie', detail: 'Posledný riadok je na tejto ploche. Telegram zatiaľ nie je zapojený.' },
+  { id: 'risk', name: 'Risk governor', detail: 'Pustí paper príkaz za 50 USD len na pripojenú verejnú adresu, do 3 pozícií a 10 príkazov za deň. Stop je 15 % pod vstupom. Live odoslanie nie je zapnuté.' },
+  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz na našu verejnú adresu. Na sieť nič neposiela.' },
+  { id: 'evaluator', name: 'Vyhodnotenie', detail: 'Pozrie, koho sledujeme, ktoré transakcie prebehli a či je to zisk alebo strata.' },
+  { id: 'notifier', name: 'Hlásenie', detail: 'Samostatný riadok na tejto ploche. Telefón sa zapojí až po zvolení kanála.' },
   { id: 'wallet', name: 'Phantom', detail: 'Ostáva odpojená. Live podpis nie je v tomto behu.' },
 ]);
 
 function publicError(error, env) {
   let text = String(error && error.message ? error.message : 'štart zlyhal');
+  text = text.replace(/api-key=[^&\s'"]+/gi, 'api-key=redacted');
   for (const index of [1, 2, 3]) {
     const secret = env[`HELIUS_API_KEY_${index}`];
     if (secret) {
       text = text.split(String(secret)).join('[redacted]');
     }
+  }
+  if (text.includes('401') || text.includes('403')) {
+    return 'Helius kľúč bol odmietnutý.';
   }
   return text;
 }
@@ -103,6 +108,8 @@ function createDesk(options = {}) {
       decision: state.decision,
       halted: state.halted,
       error: state.error,
+      notice: readPaper(paperFile).notice,
+      credits: state.last && state.last.credits ? state.last.credits : [],
       limits: LIMITS,
       config: publicConfig(current),
       book: bookOf(paperFile),
@@ -126,7 +133,7 @@ function createDesk(options = {}) {
     }
     const current = runtimeEnv();
     if (!keyPresence(current).some(Boolean)) {
-      state.error = 'RPC nie je pripojené. Vlož Helius kľúč vľavo.';
+      state.error = 'RPC nie je pripojené. Vlož Helius kľúč v kroku 1.';
       const error = new Error(state.error);
       error.statusCode = 409;
       throw error;
@@ -159,11 +166,23 @@ function createDesk(options = {}) {
     state.error = null;
     state.loop = watch(pool, {
       signal: controller.signal,
+      discoverOptions() {
+        const target = readTarget(readPaper(paperFile), Math.floor(Date.now() / 1000), state.wallet, config.programId);
+        if (!target) {
+          return { skip: true };
+        }
+        return {
+          address: target.address,
+          seen: target.seen,
+          before: target.before || undefined,
+          tipOnly: target.tip === true,
+        };
+      },
       onResult(result) {
         if (state.token !== token || controller.signal.aborted) {
           return;
         }
-        const cycle = runCycle(readPaper(paperFile), result, Math.floor(Date.now() / 1000));
+        const cycle = runCycle(readPaper(paperFile), result, Math.floor(Date.now() / 1000), state.wallet);
         writePaper(paperFile, cycle.ledger);
         state.last = publicResult(result);
         state.events = cycle.events;
@@ -203,11 +222,15 @@ function createDesk(options = {}) {
     return snapshot();
   }
 
-  function kill() {
+  async function kill() {
     const ledger = haltLedger(readPaper(paperFile));
     writePaper(paperFile, ledger);
     state.halted = true;
     state.error = null;
+    state.decision = 'kill drží pozície';
+    await halt();
+    state.halted = true;
+    state.running = false;
     state.decision = 'kill drží pozície';
     return snapshot();
   }
@@ -258,7 +281,7 @@ function createDesk(options = {}) {
     if (body && body.disconnect) {
       state.wallet = null;
     } else {
-      const address = String(body && body.address || '').trim();
+      const address = String(body && body.address || '').replace(/\s+/g, '');
       if (!PUBLIC_ADDRESS.test(address)) {
         state.error = 'Povolená je len verejná adresa. Súkromný kľúč sa neprijíma.';
         const error = new Error(state.error);
@@ -340,34 +363,79 @@ function bookOf(file) {
   return {
     halted: ledger.halted,
     openPositions: ledger.positions.length,
-    ordersToday: ledger.orders.filter((order) => dayOf(order.recordedAt) === day).length,
+    ordersToday: ordersOnDay(ledger.orders, day),
     ordersTotal: ledger.orders.length,
-    trades: ledger.trades.length,
+    trades: Object.values(ledger.wallets).reduce((sum, row) => sum + row.classified, 0),
     positions: ledger.positions.slice(-5).map((position) => ({
-      wallet: shortId(position.wallet),
+      wallet: shortId(position.account || position.wallet),
+      account: shortId(position.account),
+      source: shortId(position.source),
       mint: shortId(position.mint),
       units: position.units,
+      stakeUsd: position.stakeUsd == null ? LIMITS.paperUsd : position.stakeUsd,
+      stop: position.stopPrice == null ? null : position.stopPrice,
     })),
     recentOrders: ledger.orders.slice(-5).map((order) => ({
       side: order.side,
-      wallet: shortId(order.wallet),
+      wallet: shortId(order.account || order.wallet),
+      source: shortId(order.source),
       mint: shortId(order.mint),
     })),
-    ladder: traderLadder(ledger.trades).map((row) => ({
+    ladder: traderLadder(ledger, Math.floor(Date.now() / 1000)).map((row) => ({
       address: shortId(row.address),
       classified: row.classified,
-      need: LIMITS.minTraderSamples,
+      need: row.need,
       side: row.side,
       mint: shortId(row.mint),
+      rank: row.rank,
+      ageSec: row.ageSec,
+      qualified: row.qualified,
+      stakeUsd: row.stakeUsd,
+      reason: row.reason,
+      lastSignature: shortId(row.lastSignature),
     })),
+    summary: summarizePaper(ledger),
+    review: publicReview(evaluateBook(ledger, Math.floor(Date.now() / 1000))),
   };
 }
 
-function dayOf(seconds) {
-  if (!Number.isInteger(seconds)) {
-    return '';
-  }
-  return new Date(seconds * 1000).toISOString().slice(0, 10);
+function publicReview(review) {
+  return {
+    verdict: review.verdict,
+    profitUsd: review.profitUsd,
+    lossUsd: review.lossUsd,
+    netUsd: review.netUsd,
+    wins: review.wins,
+    losses: review.losses,
+    open: review.open,
+    bankUsd: review.bankUsd,
+    equityUsd: review.equityUsd,
+    lockedUsd: review.lockedUsd,
+    freeUsd: review.freeUsd,
+    watching: review.watching.map((row) => ({
+      rank: row.rank,
+      address: shortId(row.address),
+      classified: row.classified,
+      need: row.need,
+      side: row.side,
+      mint: shortId(row.mint),
+      lastSignature: shortId(row.lastSignature),
+      stakeUsd: row.stakeUsd,
+      verdict: row.verdict,
+    })),
+    trades: review.trades.map((trade) => ({
+      side: trade.side,
+      state: trade.state,
+      source: shortId(trade.source),
+      mint: shortId(trade.mint),
+      stakeUsd: trade.stakeUsd,
+      entryPrice: trade.entryPrice,
+      exitPrice: trade.exitPrice,
+      resultBps: trade.resultBps,
+      resultUsd: trade.resultUsd,
+      verdict: trade.verdict,
+    })),
+  };
 }
 
 function shortId(value) {
@@ -458,6 +526,13 @@ function publicResult(result) {
     creditsRemaining: totals ? totals.creditsRemaining : null,
     creditsUsed: totals ? totals.creditsUsed : null,
     calls: totals ? totals.calls : null,
+    credits: Array.isArray(result && result.usage && result.usage.keys)
+      ? result.usage.keys.map((key, index) => ({
+        slot: index + 1,
+        present: true,
+        remaining: key.creditsRemaining,
+      }))
+      : [],
   };
 }
 
@@ -501,7 +576,7 @@ function createServer(desk) {
       }
       if (request.method === 'POST' && url.pathname === '/api/kill') {
         assertDesk(request);
-        sendJson(response, 200, desk.kill());
+        sendJson(response, 200, await desk.kill());
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/release') {

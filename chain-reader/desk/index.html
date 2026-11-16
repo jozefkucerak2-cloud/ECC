@@ -89,7 +89,8 @@
     form { display: flex; flex-direction: column; gap: 8px; margin: 0; }
     .label { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.02em; }
     .host { margin: 0; color: var(--muted); font-size: 13px; }
-    label { color: var(--faint); font-size: 12px; font-weight: 500; }
+    label { display: flex; justify-content: space-between; color: var(--faint); font-size: 12px; font-weight: 500; }
+    label em { font-style: normal; color: var(--muted); }
     input {
       width: 100%;
       height: 40px;
@@ -173,18 +174,23 @@
     .gates li span { color: var(--faint); font-size: 12px; }
     .gates li b { font-weight: 600; font-size: 14px; }
     #program, .host { overflow-wrap: anywhere; }
+    .metrics.money { grid-template-columns: 1.25fr repeat(4, minmax(0, 1fr)); }
+    .sub { display: block; margin-top: 6px; color: var(--faint); font-size: 12px; font-weight: 500; }
+    #pnl.up, #sum-profit.up, #balance.up, .rows strong.up { color: var(--moss); }
+    #pnl.down, #sum-loss.down, #balance.down, .rows strong.down { color: var(--clay); }
+
     @media (max-width: 980px) {
       .body { display: flex; flex-direction: column; }
       .work { order: -1; }
       aside { border-right: 0; border-top: 1px solid var(--line); }
-      .split, .metrics, .gates { grid-template-columns: 1fr 1fr; }
+      .split, .metrics, .gates, .metrics.money { grid-template-columns: 1fr 1fr; }
       header { flex-wrap: wrap; align-items: center; }
       .clock { margin-left: 0; }
       .stage-head { flex-direction: column; align-items: stretch; }
       .actions button { flex: 1 1 140px; }
     }
     @media (max-width: 640px) {
-      .metrics, .split, .gates { grid-template-columns: 1fr; }
+      .metrics, .split, .gates, .metrics.money, .metrics.tight { grid-template-columns: 1fr; }
       .work { padding: 16px; }
       aside { padding-left: 16px; padding-right: 16px; }
     }
@@ -192,7 +198,7 @@
       * { scroll-behavior: auto; transition: none; }
     }
   </style>
-</head>
+
 <body>
   <div class="app">
     <header>
@@ -204,15 +210,15 @@
     </header>
     <div class="body">
       <aside>
-        <div class="group">
+        <div class="group" id="card-helius">
           <form id="rpc-form">
             <p class="label">Helius RPC</p>
             <p class="host" id="endpoint">mainnet.helius-rpc.com</p>
-            <label for="key1">Kľúč 1</label>
-            <input id="key1" name="key1" type="password" autocomplete="off" spellcheck="false">
-            <label for="key2">Kľúč 2</label>
+            <label for="key1">Kľúč 1 <em id="slot1">prázdny</em></label>
+            <input id="key1" name="key1" type="password" autocomplete="off" spellcheck="false" placeholder="kľúč alebo celá Helius adresa">
+            <label for="key2">Kľúč 2 <em id="slot2">prázdny</em></label>
             <input id="key2" name="key2" type="password" autocomplete="off" spellcheck="false">
-            <label for="key3">Kľúč 3</label>
+            <label for="key3">Kľúč 3 <em id="slot3">prázdny</em></label>
             <input id="key3" name="key3" type="password" autocomplete="off" spellcheck="false">
             <details>
               <summary>ID projektov</summary>
@@ -228,10 +234,10 @@
             <div class="row">
               <button class="solid" id="save-rpc" type="submit">Pripojiť RPC</button>
             </div>
-            <p class="fine">Vlož Helius kľúč alebo celú adresu mainnet.helius-rpc.com. Kľúč sa do stavu nevracia a súkromný kľúč peňaženky sa odmieta.</p>
+            <p class="fine" id="saved-keys">Vlož Helius kľúč alebo celú adresu mainnet.helius-rpc.com. Kľúč sa do stavu nevracia a súkromný kľúč peňaženky sa odmieta.</p>
           </form>
         </div>
-        <div class="group">
+        <div class="group" id="card-wallet">
           <form id="wallet-form">
             <p class="label">Phantom</p>
             <div class="row">
@@ -243,17 +249,17 @@
             <div class="row">
               <button id="save-wallet" type="submit">Uložiť adresu</button>
             </div>
-            <p class="fine">Pripája sa len verejná adresa. Podpis a odoslanie transakcie tu nie sú.</p>
+            <p class="fine" id="saved-wallet">Pripája sa len verejná adresa. Podpis a odoslanie transakcie tu nie sú.</p>
           </form>
         </div>
         <div class="group">
           <p class="label">Lokálny proces</p>
-          <p class="fine"><code>node chain-reader/src/serve.js</code><br><code>http://127.0.0.1:8787</code></p>
+          <p class="fine"><code>node chain-reader/src/serve.js</code><br><code>http://127.0.0.1:8787</code><br>Nočný beh je tento proces na stroji, ktorý nespí. Hostená karta po zatvorení prestane.</p>
         </div>
       </aside>
-      <section class="work">
+      <section class="work" id="card-run">
         <div class="stage-head">
-          <p id="status">Kontrolujem lokálny proces.</p>
+          <p id="status" aria-live="polite">Kontrolujem lokálny proces.</p>
           <div class="actions">
             <button class="solid" id="start" type="button">Spustiť paper</button>
             <button id="stop" type="button">Pauza</button>
@@ -267,6 +273,14 @@
           <div class="metric"><small>Pozície</small><b id="lim-pos">0 / 3</b></div>
           <div class="metric"><small>Príkazy dnes</small><b id="lim-day">0 / 10</b></div>
         </div>
+        <div class="metrics money" id="dashboard">
+          <div class="metric"><small>Zostatok</small><b id="balance">50,00 USD</b><small class="sub" id="dash-wallet">Paper 50 USD</small></div>
+          <div class="metric"><small>Voľné</small><b id="free">50,00 USD</b><small class="sub">V pozíciách <span id="locked">0,00 USD</span></small></div>
+          <div class="metric"><small>Zisk</small><b id="sum-profit">0,00 USD</b></div>
+          <div class="metric"><small>Strata</small><b id="sum-loss">0,00 USD</b></div>
+          <div class="metric"><small>Čistý</small><b id="pnl">0,00 USD</b><small class="sub"><span id="sum-open">0</span> otvorených · <span id="sum-closed">0</span> zatvorených</small></div>
+        </div>
+        <p class="fine" id="review-verdict">Ďalší vyhodnotí prvý čistý obchod.</p>
         <ul class="gates" id="gates">
           <li><span>Lokálny proces</span><b id="gate-local">kontrolujem</b></li>
           <li><span>Helius</span><b id="gate-rpc">kontrolujem</b></li>
@@ -275,15 +289,20 @@
           <li><span>Odoslanie transakcie</span><b id="gate-send">nie je v tomto behu</b></li>
         </ul>
         <div>
-          <div class="block-head"><p>Rebríček</p><p class="count" id="ladder-count">0 / 30</p></div>
+          <div class="block-head"><p>Koho sledujeme</p><p class="count" id="ladder-count">0 / 30</p></div>
           <p class="empty" id="ladder-empty">Žiadny čistý obchod. Rebríček sa plní z načítanej reťaze, návrh až pri 30.</p>
           <ul class="rows" id="ladder"></ul>
         </div>
         <div class="split">
           <div>
-            <div class="block-head"><p>Kniha</p><p class="count" id="book-count">0 pozícií</p></div>
-            <p class="empty" id="book-empty">Žiadna paper pozícia. Zápis príde až po 30 čistých obchodoch jednej peňaženky.</p>
+            <div class="block-head"><p>Otvorené pozície</p><p class="count" id="open-count">0</p></div>
+            <p class="empty" id="open-empty">Žiadna otvorená pozícia.</p>
             <ul class="rows" id="positions"></ul>
+            <div class="block-head" style="margin-top:22px"><p>Zatvorené pozície</p><p class="count" id="trade-count">0</p></div>
+            <p class="empty" id="rounds-empty">Zatiaľ žiadna zatvorená pozícia.</p>
+            <p class="fine" id="closed-note" hidden>Na ploche je len posledných dvanásť.</p>
+            <ul class="rows" id="rounds"></ul>
+            <p class="empty" id="book-empty">Žiadna paper pozícia. Zápis príde až po 30 čistých obchodoch jednej peňaženky.</p>
             <ul class="rows" id="orders"></ul>
             <div class="block-head" style="margin-top:22px"><p>Posledné kolo</p><p class="count" id="decision">bez príkazu</p></div>
             <div class="metrics tight">
@@ -292,18 +311,21 @@
               <div class="metric"><small>Podpisy</small><b id="fetched">0</b></div>
               <div class="metric"><small>Kredity</small><b id="credits">čaká</b></div>
             </div>
+            <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
+            <p class="fine" id="live-gate">Live odoslanie nie je zapnuté. Paper peňaženka je 50 USD.</p>
             <p class="fine" id="program">Program pump 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P.</p>
           </div>
           <div>
             <div class="block-head"><p>Tím</p><p class="count" id="key-count">0 / 3 kľúčov</p></div>
             <ol class="roles" id="roles">
-              <li><strong>Čítač</strong><span class="tag">pripravený</span><span class="detail">Číta posledných 30 podpisov programu pump a z pohybov zostatkov určí buy alebo sell.</span></li>
+              <li><strong>Čítač</strong><span class="tag">pripravený</span><span class="detail">Najprv špička programu, potom vlastné podpisy peňaženky, ktorá ešte nemá 30 čistých obchodov. Jedno kolo má strop 31 volaní.</span></li>
               <li><strong>Analytik</strong><span class="tag">pripravený</span><span class="detail">Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.</span></li>
               <li><strong>Skeptik</strong><span class="tag">pripravený</span><span class="detail">Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.</span></li>
               <li><strong>CEO</strong><span class="tag">pripravený</span><span class="detail">Návrh posunie ďalej. Limity nezmení a veto neprepíše.</span></li>
-              <li><strong>Risk governor</strong><span class="tag">pripravený</span><span class="detail">Pustí príkaz len do 3 otvorených pozícií a 10 príkazov za UTC deň.</span></li>
-              <li><strong>Executor</strong><span class="tag">pripravený</span><span class="detail">Zapíše paper príkaz do knihy. Na sieť nič neposiela.</span></li>
-              <li><strong>Hlásenie</strong><span class="tag">pripravený</span><span class="detail">Posledný riadok je na tejto ploche. Telegram zatiaľ nie je zapojený.</span></li>
+              <li><strong>Risk governor</strong><span class="tag">pripravený</span><span class="detail">Pustí paper príkaz za 50 USD len na pripojenú verejnú adresu. Druhý čaká, kým sa voľné peniaze uvoľnia.</span></li>
+              <li><strong>Executor</strong><span class="tag">pripravený</span><span class="detail">Zapíše paper príkaz na našu verejnú adresu. Na sieť nič neposiela.</span></li>
+              <li><strong>Vyhodnotenie</strong><span class="tag">pripravený</span><span class="detail">Pozrie, koho sledujeme, ktoré pozície sú otvorené alebo zatvorené a či je to zisk alebo strata.</span></li>
+              <li><strong>Hlásenie</strong><span class="tag">pripravený</span><span class="detail">Samostatný riadok na tejto ploche. Telefón sa zapojí až po zvolení kanála.</span></li>
               <li><strong>Phantom</strong><span class="tag">nepripojená</span><span class="detail">Ostáva odpojená. Live podpis nie je v tomto behu.</span></li>
             </ol>
           </div>
@@ -313,24 +335,107 @@
   </div>
   <script src="/engine.js"></script>
   <script>
-    const status = document.getElementById('status');
     const roles = document.getElementById('roles');
     const start = document.getElementById('start');
     const stop = document.getElementById('stop');
-    const kill = document.getElementById('kill');
     let online = false;
+    let serverKnown = false;
     let localNote = '';
     let noteUntil = 0;
     let browser = null;
+    let boot = null;
 
     function text(id, value) {
-      document.getElementById(id).textContent = value;
+      const node = document.getElementById(id);
+      if (node) node.textContent = value;
+    }
+
+    function formatBps(bps) {
+      const percent = (Number.isFinite(bps) ? bps : 0) / 100;
+      const sign = percent > 0 ? '+' : '';
+      return sign + percent.toLocaleString('sk-SK', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
+    }
+
+    function formatUsd(value) {
+      const number = Number.isFinite(value) ? value : 0;
+      const sign = number > 0 ? '+' : '';
+      return sign + number.toLocaleString('sk-SK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' USD';
+    }
+
+    function formatMoney(value) {
+      const number = Number.isFinite(value) ? value : 0;
+      return number.toLocaleString('sk-SK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' USD';
+    }
+
+    function formatPrice(value) {
+      return Number.isFinite(value) ? Number(value).toPrecision(4) : '—';
+    }
+
+    function shortText(value) {
+      const text = String(value || '');
+      return text.length <= 12 ? (text || '—') : text.slice(0, 4) + '…' + text.slice(-4);
+    }
+
+    function tradeLabel(side) {
+      if (side === 'stop') return 'stop';
+      if (side === 'sell') return 'predaj';
+      if (side === 'buy') return 'nákup';
+      return 'otvorený';
+    }
+
+    function readStoredSecrets() {
+      try {
+        return JSON.parse(localStorage.getItem('elite-desk-secrets') || 'null');
+      } catch {
+        return null;
+      }
+    }
+
+    async function postProcess(path, body) {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-elite-desk': '1' },
+        body: JSON.stringify(body || {}),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'požiadavka zlyhala');
+      return payload;
     }
 
     function clearRpc() {
       ['key1', 'key2', 'key3', 'project1', 'project2', 'project3'].forEach((id) => {
         document.getElementById(id).value = '';
       });
+    }
+
+    function pageStorage() {
+      try {
+        const probe = 'elite-desk-probe';
+        localStorage.setItem(probe, '1');
+        localStorage.removeItem(probe);
+        return localStorage;
+      } catch {
+        const memory = new Map();
+        return {
+          getItem: (key) => memory.get(key) || null,
+          setItem: (key, value) => memory.set(key, value),
+        };
+      }
+    }
+
+    function armBrowser() {
+      if (browser) return true;
+      if (!globalThis.EliteEngine) return false;
+      browser = EliteEngine.createBrowserDesk({
+        storage: pageStorage(),
+        onUpdate(snapshot) { paint(snapshot); },
+      });
+      paint(browser.snapshot());
+      return true;
+    }
+
+    function browserHoldsWork() {
+      return Boolean(browser && globalThis.EliteEngine && EliteEngine.tabHoldsDesk(browser.snapshot()));
     }
 
     function paint(data) {
@@ -340,12 +445,24 @@
       text('rpc-state', connected ? connected + ' / 3' : 'nepripojené');
       document.getElementById('rpc-pill').classList.toggle('on', connected > 0);
       text('key-count', connected + ' / 3 kľúčov');
+      [0, 1, 2].forEach((index) => text('slot' + (index + 1), keys[index] ? 'uložený' : 'prázdny'));
+      text('saved-keys', connected
+        ? (browser
+          ? 'Uložené ' + connected + ' z 3 v tejto karte. Keď nabehne lokálny proces, kľúč sa do neho prenesie.'
+          : 'Uložené ' + connected + ' z 3 v lokálnom procese. Po reštarte ostáva. Kľúč sa na ploche neukazuje.')
+        : 'Zatiaľ žiadny kľúč. Po uložení ostane v lokálnom procese a na ploche sa neukáže.');
       text('wallet-state', data.wallet ? data.wallet.slice(0, 4) + '…' + data.wallet.slice(-4) : 'nepripojená');
       document.getElementById('wallet-pill').classList.toggle('on', Boolean(data.wallet));
+      text('saved-wallet', data.wallet
+        ? data.wallet + ' · paper príkazy patria len tejto adrese.'
+        : 'Zatiaľ žiadna adresa. Súkromný kľúč sa neprijíma a Phantom nič nepodpisuje.');
       const mode = document.getElementById('mode');
       mode.textContent = data.halted ? 'PAPER · KILL' : 'PAPER';
       mode.classList.toggle('kill', Boolean(data.halted));
       text('endpoint', data.endpoint || 'mainnet.helius-rpc.com');
+      document.getElementById('card-helius').classList.toggle('current', connected === 0);
+      document.getElementById('card-wallet').classList.toggle('current', connected > 0 && !data.wallet);
+      document.getElementById('card-run').classList.toggle('live', Boolean(data.running));
       roles.replaceChildren();
       (data.roles || []).forEach((role) => {
         const item = document.createElement('li');
@@ -372,9 +489,17 @@
       const orders = document.getElementById('orders');
       positions.replaceChildren();
       orders.replaceChildren();
-      (book.positions || []).forEach((position) => {
+      const openRows = book.positions || [];
+      text('open-count', String(openRows.length));
+      document.getElementById('open-empty').hidden = openRows.length > 0;
+      openRows.forEach((position) => {
         const row = document.createElement('li');
-        row.textContent = position.wallet + ' · ' + position.mint + ' · ' + position.units;
+        const name = document.createElement('strong');
+        name.textContent = shortText(position.mint) + ' · ' + formatMoney(position.stakeUsd == null ? 50 : position.stakeUsd);
+        const meta = document.createElement('span');
+        const stop = position.stop == null ? 'bez stopu' : 'stop ' + formatPrice(position.stop);
+        meta.textContent = 'otvorená · od ' + (position.source || '—') + ' · ' + stop;
+        row.append(name, meta);
         positions.append(row);
       });
       (book.recentOrders || []).forEach((order) => {
@@ -389,7 +514,8 @@
       document.getElementById('book-empty').hidden = (book.openPositions || 0) + (book.ordersTotal || 0) > 0;
       const ladder = document.getElementById('ladder');
       ladder.replaceChildren();
-      const rows = book.ladder || [];
+      const review = book.review || {};
+      const rows = Array.isArray(review.watching) && review.watching.length > 0 ? review.watching : (book.ladder || []);
       const best = rows[0] ? rows[0].classified : 0;
       const need = limits.minTraderSamples || 30;
       text('ladder-count', best + ' / ' + need);
@@ -397,14 +523,13 @@
       rows.forEach((row) => {
         const item = document.createElement('li');
         const name = document.createElement('strong');
-        name.textContent = row.address;
+        name.textContent = (row.rank || '') + ' · ' + row.address;
         const meta = document.createElement('span');
-        meta.textContent = (row.side || '—') + ' · ' + row.classified + '/' + row.need;
+        meta.textContent = (row.verdict || row.reason || 'vzorka') + ' · posledná ' + (row.side || '—') + ' ' + shortText(row.mint) + ' · ' + shortText(row.lastSignature) + ' · ' + row.classified + '/' + row.need;
         const bar = document.createElement('div');
         bar.className = 'lane';
         const fill = document.createElement('span');
-        const rowNeed = row.need || 30;
-        fill.style.width = Math.min(100, Math.round((row.classified / rowNeed) * 100)) + '%';
+        fill.style.width = Math.min(100, Math.round((row.classified / (row.need || 30)) * 100)) + '%';
         bar.append(fill);
         item.append(name, meta, bar);
         ladder.append(item);
@@ -413,15 +538,69 @@
       text('sample', last.sample || 'čaká');
       text('wallets', last.walletCount == null ? '0' : String(last.walletCount));
       text('fetched', last.fetchedSignatures == null ? '0' : String(last.fetchedSignatures));
-      text('credits', last.creditsRemaining == null ? 'čaká' : String(last.creditsRemaining));
+      const creditRows = Array.isArray(data.credits) ? data.credits.filter((row) => row.present) : [];
+      text('credits', creditRows.length
+        ? creditRows.map((row) => row.slot + ': ' + row.remaining).join(' · ')
+        : (last.creditsRemaining == null ? 'čaká' : String(last.creditsRemaining)));
+      text('notice', data.notice || 'Bez nového paper zápisu. Telefón nie je zapojený.');
       text('decision', data.decision || 'bez príkazu');
+      const summary = book.summary || {};
+      const netUsd = Number.isFinite(review.netUsd) ? review.netUsd : (Number.isFinite(summary.realizedUsd) ? summary.realizedUsd : 0);
+      const profitUsd = Number.isFinite(review.profitUsd) ? review.profitUsd : 0;
+      const lossUsd = Number.isFinite(review.lossUsd) ? review.lossUsd : 0;
+      const equityUsd = Number.isFinite(review.equityUsd) ? review.equityUsd : 50 + netUsd;
+      const freeUsd = Number.isFinite(review.freeUsd) ? review.freeUsd : equityUsd;
+      const lockedUsd = Number.isFinite(review.lockedUsd) ? review.lockedUsd : 0;
+      const balance = document.getElementById('balance');
+      balance.textContent = formatMoney(equityUsd);
+      balance.classList.toggle('up', equityUsd > 50);
+      balance.classList.toggle('down', equityUsd < 50);
+      text('free', formatMoney(freeUsd));
+      text('locked', formatMoney(lockedUsd));
+      text('dash-wallet', data.wallet ? 'Paper 50 USD · ' + shortText(data.wallet) : 'Paper 50 USD');
+      const pnl = document.getElementById('pnl');
+      pnl.textContent = formatUsd(netUsd);
+      pnl.classList.toggle('up', netUsd > 0);
+      pnl.classList.toggle('down', netUsd < 0);
+      const profit = document.getElementById('sum-profit');
+      const loss = document.getElementById('sum-loss');
+      profit.textContent = formatUsd(profitUsd);
+      loss.textContent = formatUsd(lossUsd);
+      profit.classList.toggle('up', profitUsd > 0);
+      loss.classList.toggle('down', lossUsd < 0);
+      text('sum-open', String(summary.open || review.open || 0));
+      text('sum-closed', String(summary.closed || 0));
+      text('review-verdict', review.verdict || 'Ďalší vyhodnotí prvý čistý obchod.');
+      const rounds = document.getElementById('rounds');
+      const roundRows = (Array.isArray(review.trades) ? review.trades : (Array.isArray(summary.rounds) ? summary.rounds : []))
+        .filter((round) => round.state !== 'otvorený');
+      text('trade-count', String(summary.closed || roundRows.length));
+      const closedNote = document.getElementById('closed-note');
+      if (closedNote) closedNote.hidden = roundRows.length === 0 || roundRows.length >= (summary.closed || 0);
+      rounds.replaceChildren();
+      document.getElementById('rounds-empty').hidden = roundRows.length > 0;
+      roundRows.forEach((round) => {
+        const item = document.createElement('li');
+        const name = document.createElement('strong');
+        const state = round.state || round.side;
+        name.textContent = tradeLabel(round.side || state) + ' · ' + shortText(round.mint);
+        if (round.resultUsd > 0) name.className = 'up';
+        if (round.resultUsd < 0) name.className = 'down';
+        const meta = document.createElement('span');
+        const result = state === 'otvorený'
+          ? 'beží · ' + formatUsd(round.stakeUsd == null ? 50 : round.stakeUsd)
+          : (round.resultBps == null ? 'bez ceny' : formatBps(round.resultBps) + ' · ' + formatUsd(round.resultUsd));
+        meta.textContent = result + ' · ' + (round.verdict || 'ďalší vyhodnotí') + ' · od ' + shortText(round.source) + ' · vstup ' + formatPrice(round.entryPrice) + ' · výstup ' + formatPrice(round.exitPrice);
+        item.append(name, meta);
+        rounds.append(item);
+      });
       const config = data.config || {};
       if (config.ok) {
         text('program', 'Program ' + config.programId + '. Strana ' + config.signatureLimit + ', čistá vzorka ' + config.minCleanSample + '.');
       } else if (config.error) {
         text('program', config.error);
       }
-      text('gate-local', 'toto okno');
+      text('gate-local', browser ? 'toto okno' : 'lokálny proces');
       text('gate-rpc', connected ? connected + ' / 3 kľúčov' : 'chýba kľúč');
       text('gate-loop', data.running ? 'beží' : (data.halted ? 'kill drží pozície' : 'stojí'));
       text('gate-sample', best + ' / ' + need);
@@ -429,74 +608,108 @@
       if (data.error && !(localNote && Date.now() < noteUntil)) {
         localNote = '';
         text('status', data.error);
-      } else if (localNote) {
+      } else if (localNote && Date.now() < noteUntil) {
         text('status', localNote);
+      } else if (data.running && !data.wallet) {
+        text('status', 'Slučka beží a čaká na verejnú adresu. Bez nej sa reťaz nevolá.');
       } else if (data.running && data.localLoop) {
-        text('status', 'Paper číta reťaz v tomto okne. Zavretie okna slučku zastaví. Na sieť sa nič neposiela.');
+        text('status', 'Paper číta v tomto okne. Zavretie karty slučku zastaví. Na sieť sa nič neposiela.');
       } else if (data.running) {
         text('status', 'Paper číta reťaz. Na sieť sa nič neposiela.');
       } else if (data.halted) {
-        text('status', 'Kill drží pozície. Uvoľniť kill ich nezatvára a na sieť nič nepošle.');
-      } else if (connected) {
-        text('status', 'RPC je pripojené. Spustiť paper spustí čítanie.');
+        text('status', 'Kill drží otvorené pozície. Uvoľnenie ich nezatvára.');
+      } else if (!connected) {
+        text('status', 'Chýba aspoň jeden Helius kľúč.');
+      } else if (!data.wallet) {
+        text('status', 'Kľúč je uložený. V kroku 2 vlož verejnú adresu, potom spusti paper.');
       } else {
-        text('status', 'Vlož Helius kľúč vľavo. Peňaženku pripoj cez Phantom alebo verejnú adresu.');
+        text('status', 'Kľúč aj adresa sú uložené. Spustiť paper začne čítanie.');
       }
       start.disabled = Boolean(data.running);
       stop.disabled = !data.running;
-      kill.disabled = false;
+      document.getElementById('kill').disabled = false;
       document.getElementById('release').disabled = !data.halted;
       document.getElementById('save-rpc').disabled = Boolean(data.running);
     }
 
-    function offline() {
+    function missingEngine() {
       online = false;
-      text('status', 'Toto okno nie je lokálny proces. RPC sa pripája až na http://127.0.0.1:8787.');
-      text('gate-local', 'toto okno nie je lokálny proces');
+      serverKnown = false;
+      text('status', 'Lokálny proces neodpovedá a motor stránky sa nenačítal. Spusti node chain-reader/src/serve.js a otvor http://127.0.0.1:8787.');
+      text('gate-local', 'chýba proces');
       text('gate-rpc', 'nedostupné');
       text('gate-loop', 'nedostupné');
       text('gate-sample', 'nedostupné');
       text('gate-send', 'nie je v tomto behu');
-      start.disabled = true;
-      stop.disabled = true;
-      kill.disabled = true;
-      document.getElementById('release').disabled = true;
-      document.getElementById('save-rpc').disabled = true;
     }
 
-    function useBrowser() {
-      if (!globalThis.EliteEngine) {
-        throw new Error('engine');
-      }
-      if (!browser) {
-        browser = EliteEngine.createBrowserDesk({
-          onUpdate(snapshot) {
-            paint(snapshot);
-          },
-        });
-      }
-      paint(browser.snapshot());
-    }
-
-    async function refresh() {
+    async function readStatus() {
       const response = await fetch('/api/status', { headers: { accept: 'application/json' } });
       const type = response.headers.get('content-type') || '';
-      if (!response.ok || !type.includes('application/json')) {
-        throw new Error('status');
+      if (!response.ok || !type.includes('application/json')) throw new Error('status');
+      const data = await response.json();
+      if (!data || data.mode !== 'paper' || !Array.isArray(data.roles)) throw new Error('status');
+      return data;
+    }
+
+    async function handToProcess() {
+      let data = await readStatus();
+      serverKnown = true;
+      if (browserHoldsWork()) return false;
+      const body = globalThis.EliteEngine && EliteEngine.secretsForProcess(readStoredSecrets(), data);
+      if (body) {
+        data = await postProcess('/api/rpc', {
+          key1: body.key1,
+          key2: body.key2,
+          key3: body.key3,
+          project1: body.project1,
+          project2: body.project2,
+          project3: body.project3,
+        });
+        if (body.wallet && !data.wallet) {
+          data = await postProcess('/api/wallet', { address: body.wallet });
+        }
       }
       if (browser) {
         browser.halt();
         browser = null;
       }
-      paint(await response.json());
+      paint(data);
+      return true;
+    }
+
+    async function refresh() {
+      try {
+        await handToProcess();
+      } catch {
+        serverKnown = false;
+        if (!browser && !armBrowser()) missingEngine();
+      }
+    }
+
+    function ready() {
+      if (!boot) boot = refresh();
+      return boot;
     }
 
     async function postJson(path, body) {
+      await ready();
+      if (browser && !browserHoldsWork()) {
+        try {
+          await handToProcess();
+        } catch {
+          serverKnown = false;
+        }
+      }
       if (browser) {
         const payload = await browser.handle(path, body || {});
         localNote = '';
         paint(payload);
-        return;
+        return payload;
+      }
+      if (!serverKnown) {
+        missingEngine();
+        throw new Error('Lokálny proces neodpovedá.');
       }
       const response = await fetch(path, {
         method: 'POST',
@@ -507,14 +720,17 @@
       if (!response.ok) throw new Error(payload.error || 'požiadavka zlyhala');
       localNote = '';
       paint(payload);
+      return payload;
+    }
+
+    function note(message) {
+      localNote = message;
+      noteUntil = Date.now() + 7000;
+      text('status', message);
     }
 
     document.getElementById('rpc-form').addEventListener('submit', (event) => {
       event.preventDefault();
-      if (!online) {
-        offline();
-        return;
-      }
       const body = {
         key1: document.getElementById('key1').value,
         key2: document.getElementById('key2').value,
@@ -523,35 +739,28 @@
         project2: document.getElementById('project2').value,
         project3: document.getElementById('project3').value,
       };
-      postJson('/api/rpc', body).then(() => clearRpc()).catch((error) => text('status', error.message));
+      postJson('/api/rpc', body).then(() => {
+        clearRpc();
+        note('Kľúč je uložený. Do polí sa nevracia.');
+      }).catch((error) => text('status', error.message));
     });
 
     document.getElementById('wallet-form').addEventListener('submit', (event) => {
       event.preventDefault();
       const address = document.getElementById('address').value;
-      if (!online) {
-        offline();
-        return;
-      }
       postJson('/api/wallet', { address }).then(() => {
         document.getElementById('address').value = '';
+        note('Adresa je uložená. Paper príkazy patria len jej.');
       }).catch((error) => text('status', error.message));
     });
 
     function phantomProvider() {
       const read = () => {
-        if (window.phantom && window.phantom.solana && window.phantom.solana.isPhantom) {
-          return window.phantom.solana;
-        }
-        if (window.solana && window.solana.isPhantom) {
-          return window.solana;
-        }
+        if (window.phantom && window.phantom.solana && window.phantom.solana.isPhantom) return window.phantom.solana;
+        if (window.solana && window.solana.isPhantom) return window.solana;
         return null;
       };
-      const found = read();
-      if (found) {
-        return Promise.resolve(found);
-      }
+      if (read()) return Promise.resolve(read());
       return new Promise((resolve) => {
         const finish = () => resolve(read());
         window.addEventListener('phantom#initialized', finish, { once: true });
@@ -562,50 +771,42 @@
     document.getElementById('phantom').addEventListener('click', async () => {
       const provider = await phantomProvider();
       if (!provider) {
-        const port = location.port ? `:${location.port}` : '';
-        localNote = location.hostname === '127.0.0.1'
-          ? `Phantom sa na 127.0.0.1 nepripája. Otvor http://localhost${port}.`
-          : 'Phantom v tomto prehliadači nie je. Vlož verejnú adresu.';
-        noteUntil = Date.now() + 8000;
-        text('status', localNote);
-        return;
-      }
-      if (!online) {
-        offline();
+        const port = location.port ? ':' + location.port : '';
+        note(location.hostname === '127.0.0.1'
+          ? 'Phantom sa na 127.0.0.1 nepripája. Otvor http://localhost' + port + ', alebo vlož verejnú adresu.'
+          : 'Phantom v tomto prehliadači nie je. Vlož verejnú adresu a ulož ju.');
+        document.getElementById('address').focus();
         return;
       }
       try {
         const connected = await provider.connect();
-        const address = connected.publicKey.toString();
-        await postJson('/api/wallet', { address });
+        await postJson('/api/wallet', { address: connected.publicKey.toString() });
+        note('Phantom dal verejnú adresu. Nič nepodpisuje.');
       } catch (error) {
         text('status', error && error.message ? error.message : 'Phantom spojenie zlyhalo');
       }
     });
 
     document.getElementById('disconnect').addEventListener('click', () => {
-      if (!online) return;
-      postJson('/api/wallet', { disconnect: true }).catch((error) => text('status', error.message));
+      postJson('/api/wallet', { disconnect: true })
+        .then(() => note('Adresa je odpojená. Čítanie bez nej reťaz nevolá.'))
+        .catch((error) => text('status', error.message));
     });
 
     start.addEventListener('click', () => postJson('/api/start').catch((error) => text('status', error.message)));
     stop.addEventListener('click', () => postJson('/api/stop').catch((error) => text('status', error.message)));
-    kill.addEventListener('click', () => postJson('/api/kill').catch((error) => text('status', error.message)));
+    document.getElementById('kill').addEventListener('click', () => postJson('/api/kill').catch((error) => text('status', error.message)));
     document.getElementById('release').addEventListener('click', () => postJson('/api/release').catch((error) => text('status', error.message)));
 
     function tick() {
-      text('clock', new Date().toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Bratislava' }));
+      text('clock', new Date().toLocaleTimeString('sk-SK', {
+        hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Bratislava',
+      }));
     }
     tick();
     setInterval(tick, 1000);
-    refresh().catch(() => {
-      try {
-        useBrowser();
-      } catch {
-        offline();
-      }
-    });
-    setInterval(() => { refresh().catch(() => { if (!online) offline(); }); }, 2000);
+    ready();
+    setInterval(() => { refresh(); }, 2000);
   </script>
 </body>
 </html>

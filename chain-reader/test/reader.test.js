@@ -105,6 +105,146 @@ test('failed signature is skipped and fee payers are counted', async () => {
   assert.ok(!requests.includes('sendTransaction'));
 });
 
+test('a wallet page skips a signature that was already counted', async () => {
+  const methods = [];
+  const addresses = [];
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    methods.push(body.method);
+    if (body.method === 'getSignaturesForAddress') {
+      addresses.push(body.params[0]);
+      return jsonResponse({
+        result: [
+          { signature: 'known', err: null },
+          { signature: 'fresh', err: null },
+        ],
+      });
+    }
+    assert.equal(body.params[0], 'fresh');
+    return jsonResponse({
+      result: { transaction: { message: { accountKeys: ['WalletA'] } } },
+    });
+  };
+  const found = await discoverRecentWallets(loadConfig(baseEnv()), {
+    fetch: fetchImpl,
+    address: 'WalletA',
+    seen: ['known'],
+    budget: 31,
+  });
+  assert.deepEqual(addresses, ['WalletA']);
+  assert.deepEqual(methods, ['getSignaturesForAddress', 'getTransaction']);
+  assert.equal(found.calls, 2);
+  assert.equal(found.trades[0].signature, 'fresh');
+});
+
+test('a page of already seen signatures walks to the older page', async () => {
+  const fetched = [];
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.method === 'getSignaturesForAddress') {
+      if (body.params[1] && body.params[1].before === 'known') {
+        return jsonResponse({ result: [{ signature: 'older', err: null }] });
+      }
+      return jsonResponse({ result: [{ signature: 'known', err: null }] });
+    }
+    fetched.push(body.params[0]);
+    return jsonResponse({
+      result: { transaction: { message: { accountKeys: ['WalletA'] } } },
+    });
+  };
+  const found = await discoverRecentWallets(loadConfig(baseEnv()), {
+    fetch: fetchImpl,
+    address: 'WalletA',
+    seen: ['known'],
+    budget: 31,
+    limit: 1,
+  });
+  assert.deepEqual(fetched, ['older']);
+  assert.equal(found.examined.includes('older'), true);
+  assert.equal(found.examined.includes('known'), false);
+  assert.equal(found.startedBefore, null);
+});
+
+test('failed pages leave history open and the cursor moves past them', async () => {
+  const pages = [];
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.method !== 'getSignaturesForAddress') {
+      throw new Error('failed signature was fetched');
+    }
+    const before = body.params[1] && body.params[1].before;
+    pages.push(before || 'tip');
+    const start = pages.length * 2;
+    return jsonResponse({
+      result: [
+        { signature: `bad-${start}`, err: { InstructionError: [0, 'x'] } },
+        { signature: `bad-${start + 1}`, err: { InstructionError: [0, 'x'] } },
+      ],
+    });
+  };
+  const found = await discoverRecentWallets(loadConfig(baseEnv()), {
+    fetch: fetchImpl,
+    address: 'WalletA',
+    limit: 2,
+    budget: 31,
+    before: 'start',
+  });
+  assert.deepEqual(pages, ['start', 'bad-3', 'bad-5', 'bad-7']);
+  assert.equal(found.examined.length, 0);
+  assert.equal(found.historyDone, false);
+  assert.equal(found.resumeBefore, 'bad-9');
+});
+
+test('a short page of failed signatures finishes the history', async () => {
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.method !== 'getSignaturesForAddress') {
+      throw new Error('failed signature was fetched');
+    }
+    return jsonResponse({
+      result: [{ signature: 'bad-last', err: { InstructionError: [0, 'x'] } }],
+    });
+  };
+  const found = await discoverRecentWallets(loadConfig(baseEnv()), {
+    fetch: fetchImpl,
+    address: 'WalletA',
+    limit: 5,
+    before: 'start',
+    budget: 31,
+  });
+  assert.equal(found.historyDone, true);
+  assert.equal(found.resumeBefore, 'bad-last');
+  assert.deepEqual(found.examined, []);
+});
+
+test('a seen program tip is not fetched and does not walk older', async () => {
+  const methods = [];
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    methods.push(body.method);
+    if (body.method === 'getSignaturesForAddress') {
+      assert.equal(body.params[1] && body.params[1].before, undefined);
+      return jsonResponse({
+        result: [
+          { signature: 'known', err: null },
+          { signature: 'known-2', err: null },
+        ],
+      });
+    }
+    throw new Error('transaction was fetched');
+  };
+  const found = await discoverRecentWallets(loadConfig(baseEnv()), {
+    fetch: fetchImpl,
+    seen: ['known', 'known-2'],
+    tipOnly: true,
+    limit: 2,
+    budget: 31,
+  });
+  assert.deepEqual(methods, ['getSignaturesForAddress']);
+  assert.equal(found.calls, 1);
+  assert.equal(found.examined.length, 0);
+});
+
 test('fee payer accepts a legacy string account key', () => {
   assert.equal(feePayer({
     transaction: { message: { accountKeys: ['LegacyPayer'] } },

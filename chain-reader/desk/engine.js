@@ -2,11 +2,7 @@
 var EliteEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
-    try {
-      return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-    } catch (e) {
-      throw mod = 0, e;
-    }
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
   };
 
   // chain-reader/src/config.js
@@ -218,15 +214,18 @@ var EliteEngine = (() => {
         const solDelta = meta.postBalances[index] - meta.preBalances[index];
         const token = tokenDeltaForOwner(meta, payer);
         if (!token) {
-          return { side: "unknown", mint: null, blockTime };
+          return { side: "unknown", mint: null, blockTime, solLamports: null, tokenRaw: null };
         }
+        const fee = index === 0 && Number.isInteger(meta.fee) ? meta.fee : 0;
+        const solLamports = solDelta < 0 ? Math.max(0, -solDelta - fee) : solDelta + fee;
+        const tokenRaw = (token.delta < 0n ? -token.delta : token.delta).toString();
         if (solDelta < 0 && token.delta > 0n) {
-          return { side: "buy", mint: token.mint, blockTime };
+          return { side: "buy", mint: token.mint, blockTime, solLamports, tokenRaw };
         }
         if (solDelta > 0 && token.delta < 0n) {
-          return { side: "sell", mint: token.mint, blockTime };
+          return { side: "sell", mint: token.mint, blockTime, solLamports, tokenRaw };
         }
-        return { side: "unknown", mint: token.mint, blockTime };
+        return { side: "unknown", mint: token.mint, blockTime, solLamports, tokenRaw };
       }
       function accountIndex(tx, payer) {
         const keys = tx && tx.transaction && tx.transaction.message && tx.transaction.message.accountKeys;
@@ -289,51 +288,103 @@ var EliteEngine = (() => {
       async function discoverRecentWallets(config, options = {}) {
         const client = options.client || createRpcClient(config, options.fetch);
         const limit = options.limit || config.signatureLimit;
-        const params = { limit };
-        if (options.before) {
-          params.before = options.before;
-        }
-        const signatures = await client.call("getSignaturesForAddress", [config.programId, params]);
-        if (!Array.isArray(signatures)) {
-          throw Object.assign(new Error("signature list was not an array"), { category: "alert" });
-        }
+        const address = options.address || config.programId;
+        const seen = new Set(Array.isArray(options.seen) ? options.seen : []);
+        const budget = Number.isInteger(options.budget) ? options.budget : 1 + limit;
         const counts = /* @__PURE__ */ new Map();
         const trades = [];
+        const examined = [];
         let skipped = 0;
-        for (const row of signatures) {
-          if (!row || row.err || typeof row.signature !== "string") {
-            skipped += 1;
-            continue;
+        let fetched = 0;
+        let calls = 0;
+        let before = options.before || null;
+        let cursor = null;
+        let resumeBefore = null;
+        let historyDone = false;
+        for (let page = 0; page < 4 && calls < budget; page += 1) {
+          const params = { limit };
+          if (before) {
+            params.before = before;
           }
-          const tx = await client.call("getTransaction", [
-            row.signature,
-            { encoding: "jsonParsed", maxSupportedTransactionVersion: 1 }
-          ]);
-          const payer = feePayer(tx);
-          if (!payer) {
-            skipped += 1;
-            continue;
+          const signatures = await client.call("getSignaturesForAddress", [address, params]);
+          calls += 1;
+          if (!Array.isArray(signatures)) {
+            throw Object.assign(new Error("signature list was not an array"), { category: "alert" });
           }
-          counts.set(payer, (counts.get(payer) || 0) + 1);
-          const trade = classifyTrade(tx, payer);
-          trades.push({
-            signature: row.signature,
-            address: payer,
-            side: trade.side,
-            mint: trade.mint,
-            blockTime: trade.blockTime
-          });
+          fetched += signatures.length;
+          if (signatures.length === 0) {
+            historyDone = true;
+            break;
+          }
+          cursor = signatures[signatures.length - 1].signature;
+          let read = 0;
+          let finishedPage = true;
+          for (const row of signatures) {
+            if (calls >= budget) {
+              finishedPage = false;
+              break;
+            }
+            if (!row || typeof row.signature !== "string") {
+              skipped += 1;
+              continue;
+            }
+            if (row.err || seen.has(row.signature)) {
+              skipped += 1;
+              resumeBefore = row.signature;
+              continue;
+            }
+            const tx = await client.call("getTransaction", [
+              row.signature,
+              { encoding: "jsonParsed", maxSupportedTransactionVersion: 1 }
+            ]);
+            calls += 1;
+            read += 1;
+            seen.add(row.signature);
+            examined.push(row.signature);
+            resumeBefore = row.signature;
+            const payer = feePayer(tx);
+            if (!payer) {
+              skipped += 1;
+              continue;
+            }
+            counts.set(payer, (counts.get(payer) || 0) + 1);
+            const trade = classifyTrade(tx, payer);
+            trades.push({
+              signature: row.signature,
+              address: payer,
+              side: trade.side,
+              mint: trade.mint,
+              blockTime: trade.blockTime,
+              solLamports: trade.solLamports,
+              tokenRaw: trade.tokenRaw
+            });
+          }
+          if (!finishedPage) {
+            break;
+          }
+          if (signatures.length < limit) {
+            historyDone = true;
+            break;
+          }
+          if (options.tipOnly || read > 0 || !resumeBefore || resumeBefore === before) {
+            break;
+          }
+          before = resumeBefore;
         }
-        const wallets = [...counts.entries()].map(([address, txCount]) => ({ address, txCount })).sort((a, b) => b.txCount - a.txCount || a.address.localeCompare(b.address));
-        const fetched = signatures.length;
-        const oldest = signatures.length > 0 ? signatures[signatures.length - 1].signature : null;
+        const wallets = [...counts.entries()].map(([wallet, txCount]) => ({ address: wallet, txCount })).sort((a, b) => b.txCount - a.txCount || a.address.localeCompare(b.address));
         return {
           source: "solana-rpc",
           programId: config.programId,
+          address,
           fetchedSignatures: fetched,
           skipped,
+          calls,
+          examined,
           sample: fetched >= config.minCleanSample ? "ok" : "insufficient",
-          nextCursor: oldest,
+          startedBefore: options.before || null,
+          resumeBefore,
+          historyDone,
+          nextCursor: cursor,
           wallets,
           trades
         };
@@ -366,12 +417,20 @@ var EliteEngine = (() => {
       var RPC_KEY = /^[A-Za-z0-9_-]{8,64}$/;
       var HELIUS_HOSTS = /* @__PURE__ */ new Set(["mainnet.helius-rpc.com", "beta.helius-rpc.com"]);
       function parseHeliusKey(value) {
-        const text = String(value || "").trim();
+        let text = String(value || "").trim();
+        if (text.startsWith('"') && text.endsWith('"') || text.startsWith("'") && text.endsWith("'")) {
+          text = text.slice(1, -1).trim();
+        }
+        text = text.replace(/\s+/g, "");
         if (!text) {
           return "";
         }
         if (text.includes("://") || text.startsWith("//")) {
           return keyFromUrl(text);
+        }
+        const embedded = text.match(/(?:api-key=)([A-Za-z0-9_-]{8,64})/i);
+        if (embedded) {
+          return embedded[1];
         }
         if (!RPC_KEY.test(text)) {
           throw badKey();
@@ -416,21 +475,60 @@ var EliteEngine = (() => {
         maxOrdersPerDay: 10,
         minTraderSamples: 30,
         maxEventAgeSec: 60,
-        paperUnits: 1
+        paperUnits: 1,
+        paperUsd: 50,
+        stopBps: 1500,
+        seenCap: 120
       });
+      var PUBLIC_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
       function emptyLedger() {
-        return { version: 1, mode: "paper", halted: false, trades: [], orders: [], positions: [] };
+        return {
+          version: 2,
+          mode: "paper",
+          halted: false,
+          wallets: {},
+          orders: [],
+          positions: [],
+          credits: { cycleStartedAt: 0, used: [0, 0, 0] },
+          programSeen: [],
+          notice: "Bez nov\xE9ho paper z\xE1pisu. Telef\xF3n nie je zapojen\xFD."
+        };
       }
       function loadLedger(raw) {
-        const source = raw && raw.version === 1 ? raw : emptyLedger();
+        const source = raw && typeof raw === "object" ? raw : emptyLedger();
+        const wallets = source.wallets && typeof source.wallets === "object" && !Array.isArray(source.wallets) ? normalizeWallets(source.wallets) : walletsFromTrades(source.trades);
         return {
-          version: 1,
+          version: 2,
           mode: "paper",
           halted: Boolean(source.halted),
-          trades: Array.isArray(source.trades) ? source.trades.map((trade) => ({ ...trade })) : [],
+          wallets,
           orders: Array.isArray(source.orders) ? source.orders.map((order) => ({ ...order })) : [],
-          positions: Array.isArray(source.positions) ? source.positions.map((position) => ({ ...position })) : []
+          positions: Array.isArray(source.positions) ? source.positions.map((position) => ({ ...position })) : [],
+          credits: normalizeCredits(source.credits),
+          programSeen: normalizeSignatures(source.programSeen),
+          notice: typeof source.notice === "string" ? source.notice : emptyLedger().notice
         };
+      }
+      function normalizeSignatures(list) {
+        return Array.isArray(list) ? list.filter((item) => typeof item === "string").slice(0, LIMITS.seenCap) : [];
+      }
+      function normalizeCredits(credits) {
+        const used = [0, 1, 2].map((index) => {
+          const value = credits && Array.isArray(credits.used) ? Number(credits.used[index]) : 0;
+          return Number.isFinite(value) && value > 0 ? value : 0;
+        });
+        const started = credits && Number.isFinite(Number(credits.cycleStartedAt)) ? Number(credits.cycleStartedAt) : 0;
+        return { cycleStartedAt: started > 0 ? started : 0, used };
+      }
+      function rollCredits(credits, nowMs, monthMs) {
+        const current = normalizeCredits(credits);
+        if (!current.cycleStartedAt) {
+          return { cycleStartedAt: nowMs, used: current.used };
+        }
+        if (nowMs - current.cycleStartedAt >= monthMs) {
+          return { cycleStartedAt: nowMs, used: [0, 0, 0] };
+        }
+        return current;
       }
       function haltLedger(raw) {
         return { ...loadLedger(raw), halted: true };
@@ -438,77 +536,256 @@ var EliteEngine = (() => {
       function releaseLedger(raw) {
         return { ...loadLedger(raw), halted: false, mode: "paper" };
       }
-      function traderLadder(trades) {
-        return rankWallets(trades).slice(0, 5).map((row) => ({
-          address: row.address,
-          classified: row.classified,
-          side: row.last ? row.last.side : null,
-          mint: row.last ? row.last.mint : null
-        }));
+      function traderLadder(ledger, nowSeconds) {
+        const now = Number.isInteger(nowSeconds) ? nowSeconds : null;
+        return rankWallets(loadLedger(ledger).wallets).slice(0, 8).map((row, index) => {
+          const age = now == null || !row.last ? null : tradeAge(row.last, now);
+          const fresh = age != null && Number.isFinite(age) && age >= 0 && age <= LIMITS.maxEventAgeSec;
+          const qualified = row.classified >= LIMITS.minTraderSamples && fresh && Boolean(row.last && row.last.mint);
+          return {
+            rank: index + 1,
+            address: row.address,
+            classified: row.classified,
+            need: LIMITS.minTraderSamples,
+            side: row.last ? row.last.side : null,
+            mint: row.last ? row.last.mint : null,
+            lastSignature: row.last ? row.last.signature : null,
+            ageSec: age != null && Number.isFinite(age) ? age : null,
+            qualified,
+            stakeUsd: LIMITS.paperUsd,
+            reason: ladderReason(row, fresh)
+          };
+        });
       }
-      function runCycle(rawLedger, observation, nowSeconds) {
-        const ledger = loadLedger(rawLedger);
-        ledger.trades = mergeTrades(ledger.trades, observation && observation.trades);
-        const best = rankWallets(ledger.trades)[0] || null;
+      function ladderReason(row, fresh) {
+        if (row.classified >= LIMITS.minTraderSamples && fresh) {
+          return "pripraven\xFD na paper 50 USD";
+        }
+        if (row.classified >= LIMITS.minTraderSamples) {
+          return "\u010Dak\xE1 na \u010Derstv\xFD sign\xE1l";
+        }
+        if (row.exhausted) {
+          return "hist\xF3ria vy\u010Derpan\xE1 pred 30";
+        }
+        return "agenti zbieraj\xFA vzorku";
+      }
+      function focusAddress(raw, nowSeconds) {
+        const ledger = loadLedger(raw);
+        const rows = rankWallets(ledger.wallets);
+        const filling = rows.filter((row) => row.classified < LIMITS.minTraderSamples && !row.exhausted);
+        if (filling.length > 0) {
+          return { address: filling[0].address, seen: skipSet(filling[0]), before: filling[0].cursor, tip: false };
+        }
+        const now = Number.isInteger(nowSeconds) ? nowSeconds : 0;
+        const stale = rows.filter((row) => row.classified >= LIMITS.minTraderSamples && tradeAge(row.last, now) > LIMITS.maxEventAgeSec);
+        if (stale.length > 0) {
+          return { address: stale[0].address, seen: skipSet(stale[0]), before: null, tip: true };
+        }
+        return null;
+      }
+      function readTarget(raw, nowSeconds, account, programId) {
+        if (!PUBLIC_ADDRESS.test(String(account || ""))) {
+          return null;
+        }
+        const ledger = loadLedger(raw);
+        if (ledger.halted) {
+          return null;
+        }
+        const focus = focusAddress(ledger, nowSeconds);
+        if (focus) {
+          return focus;
+        }
+        if (typeof programId !== "string" || programId.length === 0) {
+          return null;
+        }
+        return {
+          address: programId,
+          seen: ledger.programSeen.slice(),
+          before: null,
+          tip: true
+        };
+      }
+      function runCycle(rawLedger, observation, nowSeconds, account) {
+        let ledger = loadLedger(rawLedger);
+        const incoming = Array.isArray(observation && observation.trades) ? observation.trades : [];
+        const wallets = incoming.reduce((next, trade) => absorb(next, trade), ledger.wallets);
+        ledger = {
+          ...ledger,
+          wallets: markExamined(wallets, observation),
+          programSeen: rememberProgram(ledger.programSeen, observation)
+        };
+        const best = rankWallets(ledger.wallets)[0] || null;
         const analyst = propose(best);
         const skeptic = review(best, nowSeconds);
-        const order = skeptic.veto ? null : analyst.order;
-        const risk = govern(order, ledger, nowSeconds);
-        const executed = apply(risk, ledger, nowSeconds);
+        const copy = skeptic.veto ? null : analyst.order;
+        const stopped = applyStops(ledger, incoming, nowSeconds);
+        ledger = stopped.ledger;
+        const risk = govern(copy, ledger, nowSeconds, account);
+        const executed = apply(risk, ledger, nowSeconds, account);
+        ledger = { ...executed.ledger, notice: noticeFor(stopped.closed, executed) };
+        const judgement = evaluateBook(ledger, nowSeconds);
         const events = [
-          { role: "reader", note: `${Array.isArray(observation && observation.trades) ? observation.trades.length : 0} z\xE1znamov v tomto kole` },
+          { role: "reader", note: `${incoming.filter((trade) => trade && (trade.side === "buy" || trade.side === "sell")).length} \u010Dist\xFDch v tomto kole` },
           { role: "analyst", note: analyst.note },
           { role: "skeptic", note: skeptic.note },
           { role: "ceo", note: skeptic.veto ? "veto plat\xED, limity sa nemenia" : "n\xE1vrh ide \u010Falej bez zmeny limitov" },
           { role: "risk", note: risk.note },
           { role: "executor", note: executed.note },
-          { role: "notifier", note: executed.note }
+          { role: "evaluator", note: judgement.verdict },
+          { role: "notifier", note: ledger.notice }
         ];
-        return { ledger: executed.ledger, events, decision: skeptic.veto ? skeptic.note : executed.note };
+        const decision = stopped.closed ? "paper stop zatvoril poz\xEDciu v knihe" : skeptic.veto ? skeptic.note : executed.note;
+        return { ledger, events, decision };
       }
-      function mergeTrades(existing, incoming) {
-        const seen = new Set(existing.map((trade) => trade.signature));
-        const trades = existing.map((trade) => ({ ...trade }));
-        for (const trade of incoming || []) {
-          if (!trade || typeof trade.signature !== "string" || seen.has(trade.signature)) {
-            continue;
-          }
-          seen.add(trade.signature);
-          trades.push({ ...trade });
-        }
-        return trades;
+      function walletsFromTrades(trades) {
+        return (Array.isArray(trades) ? trades : []).reduce((wallets, trade) => absorb(wallets, trade), {});
       }
-      function rankWallets(trades) {
-        const wallets = /* @__PURE__ */ new Map();
-        for (const trade of trades) {
-          if (!trade || typeof trade.address !== "string") {
-            continue;
+      function normalizeWallets(source) {
+        return Object.entries(source).reduce((wallets, [address, row]) => {
+          if (!row || typeof row !== "object") {
+            return wallets;
           }
-          const row = wallets.get(trade.address) || { address: trade.address, classified: 0, last: null };
-          if (trade.side === "buy" || trade.side === "sell") {
-            row.classified += 1;
-            if (!row.last || (trade.blockTime || 0) >= (row.last.blockTime || 0)) {
-              row.last = trade;
+          const seen = Array.isArray(row.seen) ? row.seen.filter((item) => typeof item === "string").slice(0, LIMITS.seenCap) : [];
+          const skip = Array.isArray(row.skip) ? row.skip.filter((item) => typeof item === "string").slice(0, LIMITS.seenCap) : [];
+          const classified = Number.isInteger(row.classified) ? row.classified : seen.length;
+          return {
+            ...wallets,
+            [address]: {
+              classified,
+              seen,
+              skip,
+              cursor: typeof row.cursor === "string" && row.cursor ? row.cursor : null,
+              exhausted: Boolean(row.exhausted),
+              last: row.last && typeof row.last === "object" ? { ...row.last } : null
             }
-          }
-          wallets.set(trade.address, row);
+          };
+        }, {});
+      }
+      function absorb(wallets, trade) {
+        if (!trade || typeof trade.address !== "string" || typeof trade.signature !== "string") {
+          return wallets;
         }
-        return [...wallets.values()].sort((a, b) => b.classified - a.classified || a.address.localeCompare(b.address));
+        if (trade.side !== "buy" && trade.side !== "sell") {
+          return wallets;
+        }
+        const prior = wallets[trade.address] || blankWallet();
+        if (prior.seen.includes(trade.signature)) {
+          return wallets;
+        }
+        const seen = rememberSignature(prior.seen, trade.signature);
+        const last = !prior.last || (trade.blockTime || 0) >= (prior.last.blockTime || 0) ? compactTrade(trade) : prior.last;
+        return {
+          ...wallets,
+          [trade.address]: {
+            classified: prior.classified + 1,
+            seen,
+            skip: prior.skip,
+            cursor: prior.cursor,
+            exhausted: prior.exhausted,
+            last
+          }
+        };
+      }
+      function blankWallet() {
+        return { classified: 0, seen: [], skip: [], cursor: null, exhausted: false, last: null };
+      }
+      function markExamined(wallets, observation) {
+        if (!observation || typeof observation.address !== "string" || observation.address === observation.programId) {
+          return wallets;
+        }
+        const examined = Array.isArray(observation.examined) ? observation.examined.filter((item) => typeof item === "string") : [];
+        const prior = wallets[observation.address] || blankWallet();
+        const walkingOlder = typeof observation.startedBefore === "string" && observation.startedBefore.length > 0;
+        const resume = typeof observation.resumeBefore === "string" && observation.resumeBefore ? observation.resumeBefore : examined.length > 0 ? examined[examined.length - 1] : null;
+        const cursor = resume && (!prior.cursor || walkingOlder) ? resume : prior.cursor;
+        return {
+          ...wallets,
+          [observation.address]: {
+            ...prior,
+            skip: walkingOlder ? prior.skip : rememberTip(prior.skip, examined),
+            cursor,
+            exhausted: prior.exhausted || observation.historyDone === true
+          }
+        };
+      }
+      function rememberProgram(programSeen, observation) {
+        if (!observation || typeof observation.address !== "string" || observation.address !== observation.programId) {
+          return Array.isArray(programSeen) ? programSeen : [];
+        }
+        const examined = Array.isArray(observation.examined) ? observation.examined.filter((item) => typeof item === "string") : [];
+        return rememberTip(programSeen, examined);
+      }
+      function rememberTip(skip, examined) {
+        const prior = Array.isArray(skip) ? skip : [];
+        const known = new Set(prior);
+        const fresh = [];
+        for (const signature of examined) {
+          if (!known.has(signature)) {
+            known.add(signature);
+            fresh.push(signature);
+          }
+        }
+        return fresh.concat(prior).slice(0, LIMITS.seenCap);
+      }
+      function skipSet(row) {
+        const skip = Array.isArray(row.skip) ? row.skip : [];
+        const seen = Array.isArray(row.seen) ? row.seen : [];
+        const known = /* @__PURE__ */ new Set();
+        const merged = [];
+        for (const signature of skip.concat(seen)) {
+          if (typeof signature === "string" && !known.has(signature)) {
+            known.add(signature);
+            merged.push(signature);
+          }
+        }
+        return merged;
+      }
+      function rememberSignature(seen, signature) {
+        if (seen.length >= LIMITS.seenCap) {
+          return seen.slice(seen.length - LIMITS.seenCap + 1).concat(signature);
+        }
+        return seen.concat(signature);
+      }
+      function compactTrade(trade) {
+        return {
+          signature: trade.signature,
+          address: trade.address,
+          side: trade.side,
+          mint: trade.mint,
+          blockTime: trade.blockTime,
+          solLamports: Number.isFinite(trade.solLamports) ? trade.solLamports : null,
+          tokenRaw: typeof trade.tokenRaw === "string" ? trade.tokenRaw : null
+        };
+      }
+      function rankWallets(wallets) {
+        return Object.entries(wallets).map(([address, row]) => ({
+          address,
+          classified: row.classified,
+          seen: row.seen,
+          skip: row.skip || [],
+          cursor: row.cursor || null,
+          exhausted: Boolean(row.exhausted),
+          last: row.last
+        })).sort((a, b) => b.classified - a.classified || a.address.localeCompare(b.address));
       }
       function propose(best) {
         if (!best || best.classified < LIMITS.minTraderSamples || !best.last || !best.last.mint) {
           return { order: null, note: "menej ako 30 \u010Dist\xFDch obchodov jedn\xE9ho obchodn\xEDka" };
         }
         const last = best.last;
+        const entryPrice = priceOf(last);
+        const stopPrice = entryPrice == null ? null : entryPrice * (1e4 - LIMITS.stopBps) / 1e4;
         return {
           order: {
-            id: `${last.address}:${last.mint}:${last.side}:${last.signature}`,
-            wallet: last.address,
+            source: last.address,
             mint: last.mint,
             side: last.side,
             signature: last.signature,
             blockTime: last.blockTime,
-            units: LIMITS.paperUnits
+            units: LIMITS.paperUnits,
+            stakeUsd: LIMITS.paperUsd,
+            entryPrice,
+            stopPrice
           },
           note: `${last.side} po ${best.classified} \u010Dist\xFDch obchodoch`
         };
@@ -521,37 +798,52 @@ var EliteEngine = (() => {
         if (!last || last.side !== "buy" && last.side !== "sell" || !last.mint) {
           return { veto: true, note: "veto: smer nie je jasn\xFD" };
         }
-        if (!Number.isInteger(last.blockTime) || !Number.isInteger(nowSeconds) || nowSeconds - last.blockTime > LIMITS.maxEventAgeSec) {
+        if (tradeAge(last, nowSeconds) > LIMITS.maxEventAgeSec) {
           return { veto: true, note: "veto: udalos\u0165 je star\u0161ia ako 60 s" };
         }
-        if (nowSeconds < last.blockTime) {
+        if (Number.isInteger(last.blockTime) && Number.isInteger(nowSeconds) && nowSeconds < last.blockTime) {
           return { veto: true, note: "veto: \u010Das udalosti je v bud\xFAcnosti" };
         }
         return { veto: false, note: "bez veta" };
       }
-      function govern(order, ledger, nowSeconds) {
+      function tradeAge(last, nowSeconds) {
+        if (!last || !Number.isInteger(last.blockTime) || !Number.isInteger(nowSeconds)) {
+          return Number.POSITIVE_INFINITY;
+        }
+        return nowSeconds - last.blockTime;
+      }
+      function govern(order, ledger, nowSeconds, account) {
         if (!order) {
           return { approved: false, order: null, note: "bez pr\xEDkazu" };
+        }
+        if (!PUBLIC_ADDRESS.test(String(account || ""))) {
+          return { approved: false, order: null, note: "pripoj verejn\xFA adresu" };
         }
         if (ledger.halted) {
           return { approved: false, order: null, note: "kill dr\u017E\xED poz\xEDcie" };
         }
-        if (ledger.orders.some((item) => item.id === order.id)) {
+        const id = orderId(account, order);
+        if (ledger.orders.some((item) => item.id === id)) {
           return { approved: false, order: null, note: "pr\xEDkaz u\u017E je zaznamenan\xFD" };
+        }
+        if (order.side === "sell" && !matchingPosition(ledger.positions, account, order)) {
+          return { approved: false, order: null, note: "bez otvorenej poz\xEDcie" };
         }
         if (order.side === "buy" && ledger.positions.length >= LIMITS.maxOpenPositions) {
           return { approved: false, order: null, note: "tri paper poz\xEDcie s\xFA pln\xE9" };
         }
-        const day = utcDay(nowSeconds);
-        const today = ledger.orders.filter((item) => utcDay(item.recordedAt) === day).length;
+        if (order.side === "buy" && paperFreeUsd(ledger) < stakeOf(order, null)) {
+          return { approved: false, order: null, note: "vo\u013En\xE9 peniaze nesta\u010Dia na 50 USD" };
+        }
+        const today = ordersOnDay(ledger.orders, utcDay(nowSeconds));
         if (today >= LIMITS.maxOrdersPerDay) {
           return { approved: false, order: null, note: "denn\xFD strop 10 paper pr\xEDkazov" };
         }
-        return { approved: true, order, note: "paper pr\xEDkaz povolen\xFD" };
+        return { approved: true, order: { ...order, id, account }, note: "paper pr\xEDkaz povolen\xFD" };
       }
       function apply(risk, ledger, nowSeconds) {
         if (!risk.approved || !risk.order) {
-          return { ledger, note: risk.note };
+          return { ledger, note: risk.note, opened: false };
         }
         const order = { ...risk.order, recordedAt: nowSeconds, mode: "paper" };
         const orders = ledger.orders.concat(order);
@@ -559,22 +851,293 @@ var EliteEngine = (() => {
         if (order.side === "buy") {
           positions = positions.concat({
             id: order.id,
-            wallet: order.wallet,
+            account: order.account,
+            source: order.source,
             mint: order.mint,
             units: order.units,
-            openedAt: nowSeconds
+            entryPrice: order.entryPrice,
+            stopPrice: order.stopPrice,
+            stakeUsd: order.stakeUsd,
+            openedAt: nowSeconds,
+            entryBlockTime: Number.isInteger(order.blockTime) ? order.blockTime : nowSeconds
           });
         }
         if (order.side === "sell") {
-          const index = positions.findIndex((position) => position.wallet === order.wallet && position.mint === order.mint);
+          const index = positions.findIndex((position) => matchingPosition([position], order.account, order));
           if (index >= 0) {
             positions = positions.slice(0, index).concat(positions.slice(index + 1));
           }
         }
         return {
           ledger: { ...ledger, mode: "paper", orders, positions },
-          note: `paper ${order.side} zaznamenan\xFD`
+          note: `paper ${order.side} zaznamenan\xFD`,
+          opened: order.side === "buy"
         };
+      }
+      function applyStops(ledger, trades, nowSeconds) {
+        let positions = ledger.positions;
+        let orders = ledger.orders;
+        let closed = false;
+        for (const trade of trades) {
+          const price = priceOf(trade);
+          if (price == null || typeof trade.mint !== "string") {
+            continue;
+          }
+          if (trade.side !== "buy" && trade.side !== "sell") {
+            continue;
+          }
+          if (!Number.isInteger(trade.blockTime)) {
+            continue;
+          }
+          const hitting = positions.filter((position) => {
+            const entry = entryTime(position);
+            return position.mint === trade.mint && position.stopPrice != null && price <= position.stopPrice && entry != null && trade.blockTime >= entry;
+          });
+          if (hitting.length === 0) {
+            continue;
+          }
+          closed = true;
+          const ids = new Set(hitting.map((position) => position.id));
+          positions = positions.filter((position) => !ids.has(position.id));
+          orders = orders.concat(hitting.map((position) => ({
+            id: `stop:${position.id}:${trade.signature}`,
+            account: position.account,
+            source: position.source,
+            mint: position.mint,
+            side: "stop",
+            signature: trade.signature,
+            entryPrice: position.entryPrice,
+            exitPrice: price,
+            units: position.units,
+            recordedAt: nowSeconds,
+            mode: "paper"
+          })));
+        }
+        return { ledger: { ...ledger, positions, orders }, closed };
+      }
+      function entryTime(position) {
+        if (Number.isInteger(position.entryBlockTime)) {
+          return position.entryBlockTime;
+        }
+        return Number.isInteger(position.openedAt) ? position.openedAt : null;
+      }
+      function noticeFor(closed, executed) {
+        if (closed) {
+          return "Stop zatvoril paper poz\xEDciu v knihe. Na sie\u0165 ni\u010D ne\u0161lo. Telef\xF3n nie je zapojen\xFD.";
+        }
+        if (executed.opened) {
+          return "Paper buy je na na\u0161ej adrese. Stop je 15 % pod vstupom. Telef\xF3n nie je zapojen\xFD.";
+        }
+        return "Bez nov\xE9ho paper z\xE1pisu. Telef\xF3n nie je zapojen\xFD.";
+      }
+      function matchingPosition(positions, account, order) {
+        return positions.some((position) => position.account === account && position.source === order.source && position.mint === order.mint);
+      }
+      function orderId(account, order) {
+        return `${account}:${order.source}:${order.mint}:${order.side}:${order.signature}`;
+      }
+      function priceOf(trade) {
+        const sol = Number(trade && trade.solLamports);
+        const tokens = Number(trade && trade.tokenRaw);
+        if (!Number.isFinite(sol) || !Number.isFinite(tokens) || sol <= 0 || tokens <= 0) {
+          return null;
+        }
+        return sol / tokens;
+      }
+      function summarizePaper(ledger) {
+        const source = ledger && typeof ledger === "object" ? ledger : {};
+        const orders = Array.isArray(source.orders) ? source.orders : [];
+        const open = /* @__PURE__ */ new Map();
+        const rounds = [];
+        for (const order of orders) {
+          if (!order || typeof order !== "object") {
+            continue;
+          }
+          if (order.side === "buy" && order.id) {
+            open.set(order.id, order);
+            continue;
+          }
+          if (order.side === "sell") {
+            const entry2 = [...open.values()].find((item) => item.account === order.account && item.source === order.source && item.mint === order.mint);
+            if (entry2) {
+              open.delete(entry2.id);
+            }
+            rounds.push(closedRound(entry2, order, "sell", finite(order.entryPrice)));
+            continue;
+          }
+          if (order.side !== "stop" || typeof order.id !== "string" || !order.id.startsWith("stop:")) {
+            continue;
+          }
+          const positionId = order.id.slice("stop:".length, order.id.lastIndexOf(":"));
+          const entry = open.get(positionId) || null;
+          if (entry) {
+            open.delete(positionId);
+          }
+          const exitPrice = finite(order.exitPrice) ?? finite(entry && entry.stopPrice);
+          rounds.push(closedRound(entry, order, "stop", exitPrice));
+        }
+        for (const position of Array.isArray(source.positions) ? source.positions : []) {
+          const stakeUsd = stakeOf(position, null);
+          rounds.push({
+            id: position.id || "",
+            mint: position.mint || "",
+            source: position.source || "",
+            account: position.account || "",
+            entryPrice: finite(position.entryPrice),
+            exitPrice: null,
+            resultBps: null,
+            stakeUsd,
+            resultUsd: null,
+            state: "otvoren\xFD",
+            at: Number.isInteger(position.openedAt) ? position.openedAt : null
+          });
+        }
+        const scored = rounds.filter((round) => round.state !== "otvoren\xFD" && round.resultBps != null);
+        const closedRows = rounds.filter((round) => round.state !== "otvoren\xFD");
+        return {
+          realizedBps: scored.reduce((sum, round) => sum + round.resultBps, 0),
+          realizedUsd: Math.round(scored.reduce((sum, round) => sum + round.resultUsd, 0) * 100) / 100,
+          profitUsd: money(scored.reduce((sum, round) => sum + (round.resultUsd > 0 ? round.resultUsd : 0), 0)),
+          lossUsd: money(scored.reduce((sum, round) => sum + (round.resultUsd < 0 ? round.resultUsd : 0), 0)),
+          stakeUsd: LIMITS.paperUsd,
+          closed: scored.length,
+          wins: scored.filter((round) => round.resultBps > 0).length,
+          losses: scored.filter((round) => round.resultBps < 0).length,
+          open: Array.isArray(source.positions) ? source.positions.length : 0,
+          rounds: closedRows.slice(-12).reverse()
+        };
+      }
+      function closedRound(entry, order, state, exitPrice) {
+        const entryPrice = finite(entry && entry.entryPrice) ?? finite(order.entryPrice);
+        const result = resultBps(entryPrice, exitPrice);
+        const stakeUsd = stakeOf(entry, order);
+        return {
+          id: order.id || "",
+          mint: entry && entry.mint || order.mint || "",
+          source: entry && entry.source || order.source || "",
+          account: entry && entry.account || order.account || "",
+          entryPrice,
+          exitPrice,
+          resultBps: result,
+          stakeUsd,
+          resultUsd: result == null ? null : Math.round(result / 1e4 * stakeUsd * 100) / 100,
+          state,
+          at: Number.isInteger(order.recordedAt) ? order.recordedAt : null
+        };
+      }
+      function paperFreeUsd(ledger) {
+        const summary = summarizePaper(ledger);
+        const locked = (Array.isArray(ledger.positions) ? ledger.positions : []).reduce((sum, position) => sum + stakeOf(position, null), 0);
+        return money(LIMITS.paperUsd + summary.realizedUsd - locked);
+      }
+      function stakeOf(entry, order) {
+        const stake = finite(entry && entry.stakeUsd) ?? finite(order && order.stakeUsd) ?? LIMITS.paperUsd;
+        return stake > 0 ? stake : LIMITS.paperUsd;
+      }
+      function finite(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
+      }
+      function resultBps(entry, exit) {
+        if (entry == null || exit == null || entry <= 0) {
+          return null;
+        }
+        return Math.round((exit - entry) / entry * 1e4);
+      }
+      function evaluateBook(raw, nowSeconds) {
+        const ledger = loadLedger(raw);
+        const summary = summarizePaper(ledger);
+        const watching = traderLadder(ledger, nowSeconds).map((row) => ({
+          ...row,
+          verdict: watchVerdict(row)
+        }));
+        const trades = summary.rounds.map((round) => ({
+          id: round.id,
+          side: round.state === "otvoren\xFD" ? "buy" : round.state,
+          source: round.source,
+          mint: round.mint,
+          account: round.account,
+          stakeUsd: round.stakeUsd,
+          entryPrice: round.entryPrice,
+          exitPrice: round.exitPrice,
+          resultBps: round.resultBps,
+          resultUsd: round.resultUsd,
+          state: round.state,
+          verdict: tradeVerdict(round.state, round.resultUsd)
+        }));
+        const profitUsd = summary.profitUsd;
+        const lossUsd = summary.lossUsd;
+        const lockedUsd = money(ledger.positions.reduce((sum, position) => sum + stakeOf(position, null), 0));
+        const equityUsd = money(LIMITS.paperUsd + summary.realizedUsd);
+        const freeUsd = money(equityUsd - lockedUsd);
+        return {
+          watching,
+          trades,
+          profitUsd,
+          lossUsd,
+          netUsd: summary.realizedUsd,
+          bankUsd: LIMITS.paperUsd,
+          equityUsd,
+          lockedUsd,
+          freeUsd,
+          wins: summary.wins,
+          losses: summary.losses,
+          open: summary.open,
+          verdict: deskVerdict(watching, summary, profitUsd, lossUsd)
+        };
+      }
+      function watchVerdict(row) {
+        if (row.qualified) {
+          return "pripraven\xFD, \u010Fal\u0161\xED m\xF4\u017Ee navrhn\xFA\u0165 50 USD";
+        }
+        if (row.classified >= LIMITS.minTraderSamples) {
+          return "m\xE1 30, \u010Fal\u0161\xED \u010Dak\xE1 na \u010Derstv\xFD obchod";
+        }
+        if (row.reason === "hist\xF3ria vy\u010Derpan\xE1 pred 30") {
+          return "hist\xF3ria nesta\u010Dila, \u010Fal\u0161\xED ho nekop\xEDruje";
+        }
+        return "sledujeme, \u010Fal\u0161\xED vyhodnot\xED pri 30";
+      }
+      function tradeVerdict(state, resultUsd) {
+        if (state === "otvoren\xFD") {
+          return "otvoren\xFD, \u010Fal\u0161\xED vyhodnot\xED po uzavret\xED";
+        }
+        if (resultUsd == null) {
+          return "bez ceny, \u010Fal\u0161\xED \u010Dak\xE1 na cenu";
+        }
+        if (resultUsd > 0) {
+          return "zisk, \u010Fal\u0161\xED ho dr\u017E\xED v sledovan\xED";
+        }
+        if (resultUsd < 0) {
+          return "strata, \u010Fal\u0161\xED berie stop ako platn\xFD";
+        }
+        return "nula, \u010Fal\u0161\xED ho nech\xE1va v rebr\xED\u010Dku";
+      }
+      function deskVerdict(watched, summary, profitUsd, lossUsd) {
+        if (watched.length === 0 && summary.closed === 0 && summary.open === 0) {
+          return "Rebr\xED\u010Dek je pr\xE1zdny. \u010Eal\u0161\xED vyhodnot\xED prv\xFD \u010Dist\xFD obchod.";
+        }
+        const lead = watched[0] ? ` Vedie ${watched[0].classified}/${watched[0].need}.` : "";
+        return `Sledujeme ${walletCountLabel(watched.length)}.${lead} Zisk ${plainUsd(profitUsd)} USD, strata ${plainUsd(Math.abs(lossUsd))} USD, \u010Dist\xFD ${plainUsd(summary.realizedUsd)} USD. \u010Eal\u0161\xED vyhodnocuje ka\u017Ed\xFD uzavret\xFD paper obchod.`;
+      }
+      function walletCountLabel(count) {
+        if (count === 1) {
+          return "1 pe\u0148a\u017Eenku";
+        }
+        if (count >= 2 && count <= 4) {
+          return `${count} pe\u0148a\u017Eenky`;
+        }
+        return `${count} pe\u0148a\u017Eeniek`;
+      }
+      function money(value) {
+        return Math.round(value * 100) / 100;
+      }
+      function plainUsd(value) {
+        const number = Number.isFinite(value) ? value : 0;
+        return Number.isInteger(number) ? String(number) : String(Math.round(number * 100) / 100);
+      }
+      function ordersOnDay(orders, day) {
+        return (Array.isArray(orders) ? orders : []).filter((item) => item && item.side !== "stop" && utcDay(item.recordedAt) === day).length;
       }
       function utcDay(seconds) {
         if (!Number.isInteger(seconds)) {
@@ -586,9 +1149,15 @@ var EliteEngine = (() => {
         LIMITS,
         emptyLedger,
         loadLedger,
+        rollCredits,
         haltLedger,
         releaseLedger,
         traderLadder,
+        focusAddress,
+        readTarget,
+        ordersOnDay,
+        summarizePaper,
+        evaluateBook,
         runCycle
       };
     }
@@ -599,22 +1168,24 @@ var EliteEngine = (() => {
     "chain-reader/src/browser-session.js"(exports, module) {
       var { PUMP_PROGRAM_ID } = require_config();
       var { discoverRecentWallets } = require_discover();
-      var { parseHeliusKey } = require_helius_key();
-      var { LIMITS, emptyLedger, haltLedger, loadLedger, releaseLedger, runCycle, traderLadder } = require_cycle();
+      var { parseHeliusKey, RPC_KEY } = require_helius_key();
+      var { LIMITS, emptyLedger, evaluateBook, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder } = require_cycle();
       var POLL_CREDITS = 31;
       var USABLE_CREDITS = 95e4;
       var MONTH_MS = 30 * 24 * 60 * 60 * 1e3;
       var PUBLIC_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
       var PROJECT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       var BOOK_KEY = "elite-desk-book";
+      var SECRET_KEY = "elite-desk-secrets";
       var ROLES = Object.freeze([
-        { id: "reader", name: "\u010C\xEDta\u010D", detail: "\u010C\xEDta posledn\xFDch 30 podpisov programu pump a z pohybov zostatkov ur\u010D\xED buy alebo sell." },
+        { id: "reader", name: "\u010C\xEDta\u010D", detail: "\u010C\xEDta len s pripojenou verejnou adresou. Najprv pe\u0148a\u017Eenku pod 30, potom \u010Derstv\xFD sign\xE1l, inak len nov\xE9 podpisy \u0161pi\u010Dky programu. Jedno kolo m\xE1 strop 31 volan\xED." },
         { id: "analyst", name: "Analytik", detail: "N\xE1vrh vznikne a\u017E ke\u010F m\xE1 jedna pe\u0148a\u017Eenka 30 \u010Dist\xFDch obchodov." },
         { id: "skeptic", name: "Skeptik", detail: "Zamietne vzorku pod 30, nejasn\xFD smer a udalos\u0165 star\u0161iu ako 60 sek\xFAnd." },
         { id: "ceo", name: "CEO", detail: "N\xE1vrh posunie \u010Falej. Limity nezmen\xED a veto neprep\xED\u0161e." },
-        { id: "risk", name: "Risk governor", detail: "Pust\xED pr\xEDkaz len do 3 otvoren\xFDch poz\xEDci\xED a 10 pr\xEDkazov za UTC de\u0148." },
-        { id: "executor", name: "Executor", detail: "Zap\xED\u0161e paper pr\xEDkaz do knihy. Na sie\u0165 ni\u010D neposiela." },
-        { id: "notifier", name: "Hl\xE1senie", detail: "Posledn\xFD riadok je na tejto ploche. Telegram zatia\u013E nie je zapojen\xFD." },
+        { id: "risk", name: "Risk governor", detail: "Pust\xED paper pr\xEDkaz za 50 USD len na pripojen\xFA verejn\xFA adresu, do 3 poz\xEDci\xED a 10 pr\xEDkazov za de\u0148. Stop je 15 % pod vstupom. Live odoslanie nie je zapnut\xE9." },
+        { id: "executor", name: "Executor", detail: "Zap\xED\u0161e paper pr\xEDkaz na na\u0161u verejn\xFA adresu. Na sie\u0165 ni\u010D neposiela." },
+        { id: "evaluator", name: "Vyhodnotenie", detail: "Pozrie, koho sledujeme, ktor\xE9 transakcie prebehli a \u010Di je to zisk alebo strata." },
+        { id: "notifier", name: "Hl\xE1senie", detail: "Samostatn\xFD riadok na tejto ploche. Telef\xF3n sa zapoj\xED a\u017E po zvolen\xED kan\xE1la." },
         { id: "wallet", name: "Phantom", detail: "Ost\xE1va odpojen\xE1. Live podpis nie je v tomto behu." }
       ]);
       function createBrowserDesk(options = {}) {
@@ -624,9 +1195,11 @@ var EliteEngine = (() => {
         });
         const auto = options.auto !== false;
         const usable = options.usableCredits ?? USABLE_CREDITS;
-        let keys = ["", "", ""];
-        let projects = ["", "", ""];
-        let wallet = null;
+        const now = options.now || Date.now;
+        const secrets = loadSecrets(storage);
+        let keys = secrets.keys;
+        let projects = secrets.projects;
+        let wallet = secrets.wallet;
         let ledger = loadStored(storage);
         let running = false;
         let timer = null;
@@ -635,7 +1208,7 @@ var EliteEngine = (() => {
         let last = null;
         let decision = ledger.halted ? "kill dr\u017E\xED poz\xEDcie" : "bez pr\xEDkazu";
         let error = null;
-        const used = [0, 0, 0];
+        let used = ledger.credits.used.slice();
         function snapshot() {
           return {
             mode: "paper",
@@ -649,6 +1222,8 @@ var EliteEngine = (() => {
             decision,
             halted: ledger.halted,
             error,
+            notice: ledger.notice,
+            credits: creditRows(),
             limits: LIMITS,
             config: {
               ok: true,
@@ -660,7 +1235,7 @@ var EliteEngine = (() => {
             roles: ROLES.map((role) => ({
               ...role,
               state: roleState(role.id, running, ledger.halted, wallet),
-              detail: role.id === "wallet" && wallet ? `${shortId(wallet)} \xB7 verejn\xE1 adresa, s\xFAkromn\xFD k\u013E\xFA\u010D sa neuklad\xE1` : role.detail
+              detail: roleDetail(role)
             }))
           };
         }
@@ -685,66 +1260,151 @@ var EliteEngine = (() => {
             throw fail(error, 400);
           }
           error = null;
+          saveSecrets(storage, { keys, projects, wallet });
           return snapshot();
         }
         function connectWallet(body) {
           if (body && body.disconnect) {
             wallet = null;
           } else {
-            const address = String(body && body.address ? body.address : "").trim();
-            if (!PUBLIC_ADDRESS.test(address)) {
+            const address = readPublicAddress(body && body.address);
+            if (!address) {
               error = "Povolen\xE1 je len verejn\xE1 adresa. S\xFAkromn\xFD k\u013E\xFA\u010D sa neprij\xEDma.";
               throw fail(error, 400);
             }
             wallet = address;
           }
           error = null;
+          saveSecrets(storage, { keys, projects, wallet });
           return snapshot();
+        }
+        function roleDetail(role) {
+          if (role.id === "wallet" && wallet) {
+            return `${shortId(wallet)} \xB7 verejn\xE1 adresa, s\xFAkromn\xFD k\u013E\xFA\u010D sa neuklad\xE1`;
+          }
+          if (role.id === "notifier") {
+            return ledger.notice;
+          }
+          return role.detail;
+        }
+        function creditRows() {
+          return [0, 1, 2].map((index) => ({
+            slot: index + 1,
+            present: Boolean(keys[index]),
+            remaining: keys[index] ? Math.max(0, usable - used[index]) : null
+          }));
+        }
+        function remember(slot, calls) {
+          const next = used.slice();
+          next[slot] += calls;
+          used = next;
+          ledger = {
+            ...ledger,
+            credits: { ...ledger.credits, used: next }
+          };
+          store(storage, ledger);
         }
         async function tick(token = generation) {
           if (token !== generation) {
             return null;
           }
-          const slot = pickSlot();
-          if (slot < 0) {
+          ledger = { ...ledger, credits: rollCredits(ledger.credits, now(), MONTH_MS) };
+          used = ledger.credits.used.slice();
+          const tried = /* @__PURE__ */ new Set();
+          let limited = false;
+          while (tried.size < 3) {
             if (token !== generation) {
               return null;
             }
-            running = false;
-            error = keys.some(Boolean) ? "Mesa\u010Dn\xFD strop k\u013E\xFA\u010Dov je pln\xFD." : "Ch\xFDba aspo\u0148 jeden Helius k\u013E\xFA\u010D.";
-            return snapshot();
+            const slot = pickSlot(tried);
+            if (slot < 0) {
+              break;
+            }
+            tried.add(slot);
+            let calls = 0;
+            try {
+              const target = readTarget(ledger, Math.floor(now() / 1e3), wallet, PUMP_PROGRAM_ID);
+              if (!target) {
+                decision = ledger.halted ? "kill dr\u017E\xED poz\xEDcie" : "pripoj verejn\xFA adresu";
+                error = null;
+                store(storage, ledger);
+                return snapshot();
+              }
+              const result = await discoverRecentWallets({
+                rpcUrl: `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(keys[slot])}`,
+                timeoutMs: 2e4,
+                maxRetries: 0,
+                retryBaseMs: 0,
+                signatureLimit: 30,
+                minCleanSample: 30,
+                programId: PUMP_PROGRAM_ID
+              }, {
+                fetch: async (url, init) => {
+                  calls += 1;
+                  const response = await fetchImpl(url, init);
+                  if (response && response.status === 429) {
+                    const error2 = new Error("rpc http 429");
+                    error2.statusCode = 429;
+                    throw error2;
+                  }
+                  return response;
+                },
+                limit: 30,
+                budget: POLL_CREDITS,
+                address: target.address,
+                seen: target.seen,
+                before: target.before || void 0,
+                tipOnly: target.tip === true
+              });
+              remember(slot, calls);
+              if (token !== generation) {
+                return null;
+              }
+              const cycle = runCycle(ledger, result, Math.floor(now() / 1e3), wallet);
+              ledger = { ...cycle.ledger, credits: ledger.credits };
+              decision = cycle.decision;
+              last = {
+                sample: result.sample,
+                walletCount: Array.isArray(result.wallets) ? result.wallets.length : 0,
+                fetchedSignatures: result.fetchedSignatures,
+                creditsRemaining: usable - used[slot],
+                focus: target.address === PUMP_PROGRAM_ID ? "program" : "pe\u0148a\u017Eenka"
+              };
+              error = null;
+              store(storage, ledger);
+              return snapshot();
+            } catch (caught) {
+              remember(slot, calls || 1);
+              if (token !== generation) {
+                return null;
+              }
+              if (caught && (caught.statusCode === 429 || String(caught.message || "").includes("429"))) {
+                limited = true;
+                continue;
+              }
+              throw caught;
+            }
           }
-          const result = await discoverRecentWallets({
-            rpcUrl: `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(keys[slot])}`,
-            timeoutMs: 2e4,
-            maxRetries: 1,
-            retryBaseMs: 400,
-            signatureLimit: 30,
-            minCleanSample: 30,
-            programId: PUMP_PROGRAM_ID
-          }, { fetch: fetchImpl, limit: 30 });
           if (token !== generation) {
             return null;
           }
-          used[slot] += 1 + result.fetchedSignatures;
-          const cycle = runCycle(ledger, result, Math.floor(Date.now() / 1e3));
-          ledger = cycle.ledger;
-          decision = cycle.decision;
-          last = {
-            sample: result.sample,
-            walletCount: Array.isArray(result.wallets) ? result.wallets.length : 0,
-            fetchedSignatures: result.fetchedSignatures,
-            creditsRemaining: usable - used[slot]
-          };
-          error = null;
+          if (!keys.some(Boolean)) {
+            running = false;
+            error = "Ch\xFDba aspo\u0148 jeden Helius k\u013E\xFA\u010D.";
+          } else if (readySlots(/* @__PURE__ */ new Set()).length === 0) {
+            running = false;
+            error = "Mesa\u010Dn\xFD strop k\u013E\xFA\u010Dov je pln\xFD.";
+          } else if (limited) {
+            error = "Helius obmedzil tempo. \u010Eal\u0161\xED k\u013E\xFA\u010D pr\xEDde v \u010Fal\u0161om kole.";
+          }
           store(storage, ledger);
           return snapshot();
         }
-        function readySlots() {
-          return keys.map((key, index) => key && used[index] + POLL_CREDITS <= usable ? index : -1).filter((index) => index >= 0);
+        function readySlots(skip) {
+          return keys.map((key, index) => key && !skip.has(index) && used[index] + POLL_CREDITS <= usable ? index : -1).filter((index) => index >= 0);
         }
-        function pickSlot() {
-          const ready = readySlots();
+        function pickSlot(skip = /* @__PURE__ */ new Set()) {
+          const ready = readySlots(skip);
           if (ready.length === 0) {
             return -1;
           }
@@ -757,7 +1417,7 @@ var EliteEngine = (() => {
             return snapshot();
           }
           if (!keys.some(Boolean)) {
-            error = "RPC nie je pripojen\xE9. Vlo\u017E Helius k\u013E\xFA\u010D v\u013Eavo.";
+            error = "RPC nie je pripojen\xE9. Vlo\u017E Helius k\u013E\xFA\u010D v kroku 1.";
             throw fail(error, 409);
           }
           generation += 1;
@@ -791,7 +1451,7 @@ var EliteEngine = (() => {
               return;
             }
             if (token === generation && running) {
-              schedule(paceMs(Math.max(1, readySlots().length)), token);
+              schedule(paceMs(Math.max(1, readySlots(/* @__PURE__ */ new Set()).length)), token);
             }
           }, delay);
         }
@@ -831,9 +1491,84 @@ var EliteEngine = (() => {
         }
         return { snapshot, connectRpc, connectWallet, tick, start, halt, kill, release, handle };
       }
+      function secretsForProcess(stored, server) {
+        const serverKeys = server && Array.isArray(server.keys) ? server.keys : [];
+        if (serverKeys.some(Boolean) || !stored || typeof stored !== "object") {
+          return null;
+        }
+        const keys = [0, 1, 2].map((index) => {
+          const value = Array.isArray(stored.keys) ? String(stored.keys[index] || "") : "";
+          return RPC_KEY.test(value) ? value : "";
+        });
+        if (!keys.some(Boolean)) {
+          return null;
+        }
+        const projects = [0, 1, 2].map((index) => {
+          const value = Array.isArray(stored.projects) ? String(stored.projects[index] || "") : "";
+          return PROJECT_UUID.test(value) ? value : "";
+        });
+        const wallet = readPublicAddress(stored.wallet);
+        return {
+          key1: keys[0],
+          key2: keys[1],
+          key3: keys[2],
+          project1: projects[0],
+          project2: projects[1],
+          project3: projects[2],
+          wallet: wallet || null
+        };
+      }
+      function tabHoldsDesk(snapshot) {
+        if (!snapshot) {
+          return false;
+        }
+        if (snapshot.running || snapshot.halted) {
+          return true;
+        }
+        const book = snapshot.book || {};
+        return (book.openPositions || 0) + (book.ordersTotal || 0) + (book.trades || 0) > 0;
+      }
       function paceMs(keyCount) {
         const perKey = Math.ceil(POLL_CREDITS * MONTH_MS / USABLE_CREDITS);
         return Math.ceil(perKey / Math.max(1, keyCount));
+      }
+      function readPublicAddress(value) {
+        const text = String(value || "").replace(/\s+/g, "");
+        return PUBLIC_ADDRESS.test(text) ? text : "";
+      }
+      function loadSecrets(storage) {
+        const empty = { keys: ["", "", ""], projects: ["", "", ""], wallet: null };
+        if (!storage) {
+          return empty;
+        }
+        try {
+          const raw = JSON.parse(storage.getItem(SECRET_KEY) || "null");
+          if (!raw || typeof raw !== "object") {
+            return empty;
+          }
+          const keys = [0, 1, 2].map((index) => {
+            const value = Array.isArray(raw.keys) ? String(raw.keys[index] || "") : "";
+            return RPC_KEY.test(value) ? value : "";
+          });
+          const projects = [0, 1, 2].map((index) => {
+            const value = Array.isArray(raw.projects) ? String(raw.projects[index] || "") : "";
+            return PROJECT_UUID.test(value) ? value : "";
+          });
+          const wallet = readPublicAddress(raw.wallet);
+          return { keys, projects, wallet: wallet || null };
+        } catch {
+          return empty;
+        }
+      }
+      function saveSecrets(storage, secrets) {
+        if (!storage) {
+          return;
+        }
+        storage.setItem(SECRET_KEY, JSON.stringify({
+          keys: secrets.keys,
+          projects: secrets.projects,
+          wallet: secrets.wallet
+        }));
       }
       function loadStored(storage) {
         if (!storage) {
@@ -853,9 +1588,12 @@ var EliteEngine = (() => {
           version: 1,
           mode: "paper",
           halted: ledger.halted,
-          trades: ledger.trades,
+          wallets: ledger.wallets,
           orders: ledger.orders,
-          positions: ledger.positions
+          positions: ledger.positions,
+          credits: ledger.credits,
+          programSeen: ledger.programSeen,
+          notice: ledger.notice
         };
         storage.setItem(BOOK_KEY, JSON.stringify(copy));
       }
@@ -864,25 +1602,76 @@ var EliteEngine = (() => {
         return {
           halted: ledger.halted,
           openPositions: ledger.positions.length,
-          ordersToday: ledger.orders.filter((order) => dayOf(order.recordedAt) === day).length,
+          ordersToday: ordersOnDay(ledger.orders, day),
           ordersTotal: ledger.orders.length,
-          trades: ledger.trades.length,
+          trades: Object.values(ledger.wallets).reduce((sum, row) => sum + row.classified, 0),
           positions: ledger.positions.slice(-5).map((position) => ({
-            wallet: shortId(position.wallet),
+            wallet: shortId(position.account || position.wallet),
+            account: shortId(position.account),
+            source: shortId(position.source),
             mint: shortId(position.mint),
-            units: position.units
+            units: position.units,
+            stakeUsd: position.stakeUsd == null ? LIMITS.paperUsd : position.stakeUsd,
+            stop: position.stopPrice == null ? null : position.stopPrice
           })),
           recentOrders: ledger.orders.slice(-5).map((order) => ({
             side: order.side,
-            wallet: shortId(order.wallet),
+            wallet: shortId(order.account || order.wallet),
+            source: shortId(order.source),
             mint: shortId(order.mint)
           })),
-          ladder: traderLadder(ledger.trades).map((row) => ({
+          ladder: traderLadder(ledger, Math.floor(Date.now() / 1e3)).map((row) => ({
             address: shortId(row.address),
             classified: row.classified,
-            need: LIMITS.minTraderSamples,
+            need: row.need,
             side: row.side,
-            mint: shortId(row.mint)
+            mint: shortId(row.mint),
+            rank: row.rank,
+            ageSec: row.ageSec,
+            qualified: row.qualified,
+            stakeUsd: row.stakeUsd,
+            reason: row.reason,
+            lastSignature: shortId(row.lastSignature)
+          })),
+          summary: summarizePaper(ledger),
+          review: publicReview(evaluateBook(ledger, Math.floor(Date.now() / 1e3)))
+        };
+      }
+      function publicReview(review) {
+        return {
+          verdict: review.verdict,
+          profitUsd: review.profitUsd,
+          lossUsd: review.lossUsd,
+          netUsd: review.netUsd,
+          wins: review.wins,
+          losses: review.losses,
+          open: review.open,
+          bankUsd: review.bankUsd,
+          equityUsd: review.equityUsd,
+          lockedUsd: review.lockedUsd,
+          freeUsd: review.freeUsd,
+          watching: review.watching.map((row) => ({
+            rank: row.rank,
+            address: shortId(row.address),
+            classified: row.classified,
+            need: row.need,
+            side: row.side,
+            mint: shortId(row.mint),
+            lastSignature: shortId(row.lastSignature),
+            stakeUsd: row.stakeUsd,
+            verdict: row.verdict
+          })),
+          trades: review.trades.map((trade) => ({
+            side: trade.side,
+            state: trade.state,
+            source: shortId(trade.source),
+            mint: shortId(trade.mint),
+            stakeUsd: trade.stakeUsd,
+            entryPrice: trade.entryPrice,
+            exitPrice: trade.exitPrice,
+            resultBps: trade.resultBps,
+            resultUsd: trade.resultUsd,
+            verdict: trade.verdict
           }))
         };
       }
@@ -894,12 +1683,6 @@ var EliteEngine = (() => {
           return "dr\u017E\xED poz\xEDcie";
         }
         return running ? "be\u017E\xED" : "pripraven\xFD";
-      }
-      function dayOf(seconds) {
-        if (!Number.isInteger(seconds)) {
-          return "";
-        }
-        return new Date(seconds * 1e3).toISOString().slice(0, 10);
       }
       function shortId(value) {
         const text = String(value || "");
@@ -925,7 +1708,9 @@ var EliteEngine = (() => {
       }
       module.exports = {
         createBrowserDesk,
-        paceMs
+        paceMs,
+        secretsForProcess,
+        tabHoldsDesk
       };
     }
   });

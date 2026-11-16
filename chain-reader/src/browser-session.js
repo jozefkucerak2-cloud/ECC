@@ -2,8 +2,8 @@
 
 const { PUMP_PROGRAM_ID } = require('./config');
 const { discoverRecentWallets } = require('./discover');
-const { parseHeliusKey } = require('./helius-key');
-const { LIMITS, emptyLedger, haltLedger, loadLedger, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
+const { parseHeliusKey, RPC_KEY } = require('./helius-key');
+const { LIMITS, emptyLedger, evaluateBook, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder } = require('./paper/cycle');
 
 const POLL_CREDITS = 31;
 const USABLE_CREDITS = 950_000;
@@ -11,15 +11,17 @@ const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const PUBLIC_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const PROJECT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BOOK_KEY = 'elite-desk-book';
+const SECRET_KEY = 'elite-desk-secrets';
 
 const ROLES = Object.freeze([
-  { id: 'reader', name: 'Čítač', detail: 'Číta posledných 30 podpisov programu pump a z pohybov zostatkov určí buy alebo sell.' },
+  { id: 'reader', name: 'Čítač', detail: 'Číta len s pripojenou verejnou adresou. Najprv peňaženku pod 30, potom čerstvý signál, inak len nové podpisy špičky programu. Jedno kolo má strop 31 volaní.' },
   { id: 'analyst', name: 'Analytik', detail: 'Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.' },
   { id: 'skeptic', name: 'Skeptik', detail: 'Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.' },
   { id: 'ceo', name: 'CEO', detail: 'Návrh posunie ďalej. Limity nezmení a veto neprepíše.' },
-  { id: 'risk', name: 'Risk governor', detail: 'Pustí príkaz len do 3 otvorených pozícií a 10 príkazov za UTC deň.' },
-  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz do knihy. Na sieť nič neposiela.' },
-  { id: 'notifier', name: 'Hlásenie', detail: 'Posledný riadok je na tejto ploche. Telegram zatiaľ nie je zapojený.' },
+  { id: 'risk', name: 'Risk governor', detail: 'Pustí paper príkaz za 50 USD len na pripojenú verejnú adresu, do 3 pozícií a 10 príkazov za deň. Stop je 15 % pod vstupom. Live odoslanie nie je zapnuté.' },
+  { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz na našu verejnú adresu. Na sieť nič neposiela.' },
+  { id: 'evaluator', name: 'Vyhodnotenie', detail: 'Pozrie, koho sledujeme, ktoré transakcie prebehli a či je to zisk alebo strata.' },
+  { id: 'notifier', name: 'Hlásenie', detail: 'Samostatný riadok na tejto ploche. Telefón sa zapojí až po zvolení kanála.' },
   { id: 'wallet', name: 'Phantom', detail: 'Ostáva odpojená. Live podpis nie je v tomto behu.' },
 ]);
 
@@ -29,9 +31,11 @@ function createBrowserDesk(options = {}) {
   const onUpdate = options.onUpdate || (() => {});
   const auto = options.auto !== false;
   const usable = options.usableCredits ?? USABLE_CREDITS;
-  let keys = ['', '', ''];
-  let projects = ['', '', ''];
-  let wallet = null;
+  const now = options.now || Date.now;
+  const secrets = loadSecrets(storage);
+  let keys = secrets.keys;
+  let projects = secrets.projects;
+  let wallet = secrets.wallet;
   let ledger = loadStored(storage);
   let running = false;
   let timer = null;
@@ -40,7 +44,7 @@ function createBrowserDesk(options = {}) {
   let last = null;
   let decision = ledger.halted ? 'kill drží pozície' : 'bez príkazu';
   let error = null;
-  const used = [0, 0, 0];
+  let used = ledger.credits.used.slice();
 
   function snapshot() {
     return {
@@ -55,6 +59,8 @@ function createBrowserDesk(options = {}) {
       decision,
       halted: ledger.halted,
       error,
+      notice: ledger.notice,
+      credits: creditRows(),
       limits: LIMITS,
       config: {
         ok: true,
@@ -66,9 +72,7 @@ function createBrowserDesk(options = {}) {
       roles: ROLES.map((role) => ({
         ...role,
         state: roleState(role.id, running, ledger.halted, wallet),
-        detail: role.id === 'wallet' && wallet
-          ? `${shortId(wallet)} · verejná adresa, súkromný kľúč sa neukladá`
-          : role.detail,
+        detail: roleDetail(role),
       })),
     };
   }
@@ -94,6 +98,7 @@ function createBrowserDesk(options = {}) {
       throw fail(error, 400);
     }
     error = null;
+    saveSecrets(storage, { keys, projects, wallet });
     return snapshot();
   }
 
@@ -101,65 +106,152 @@ function createBrowserDesk(options = {}) {
     if (body && body.disconnect) {
       wallet = null;
     } else {
-      const address = String(body && body.address ? body.address : '').trim();
-      if (!PUBLIC_ADDRESS.test(address)) {
+      const address = readPublicAddress(body && body.address);
+      if (!address) {
         error = 'Povolená je len verejná adresa. Súkromný kľúč sa neprijíma.';
         throw fail(error, 400);
       }
       wallet = address;
     }
     error = null;
+    saveSecrets(storage, { keys, projects, wallet });
     return snapshot();
+  }
+
+  function roleDetail(role) {
+    if (role.id === 'wallet' && wallet) {
+      return `${shortId(wallet)} · verejná adresa, súkromný kľúč sa neukladá`;
+    }
+    if (role.id === 'notifier') {
+      return ledger.notice;
+    }
+    return role.detail;
+  }
+
+  function creditRows() {
+    return [0, 1, 2].map((index) => ({
+      slot: index + 1,
+      present: Boolean(keys[index]),
+      remaining: keys[index] ? Math.max(0, usable - used[index]) : null,
+    }));
+  }
+
+  function remember(slot, calls) {
+    const next = used.slice();
+    next[slot] += calls;
+    used = next;
+    ledger = {
+      ...ledger,
+      credits: { ...ledger.credits, used: next },
+    };
+    store(storage, ledger);
   }
 
   async function tick(token = generation) {
     if (token !== generation) {
       return null;
     }
-    const slot = pickSlot();
-    if (slot < 0) {
+    ledger = { ...ledger, credits: rollCredits(ledger.credits, now(), MONTH_MS) };
+    used = ledger.credits.used.slice();
+    const tried = new Set();
+    let limited = false;
+    while (tried.size < 3) {
       if (token !== generation) {
         return null;
       }
-      running = false;
-      error = keys.some(Boolean) ? 'Mesačný strop kľúčov je plný.' : 'Chýba aspoň jeden Helius kľúč.';
-      return snapshot();
+      const slot = pickSlot(tried);
+      if (slot < 0) {
+        break;
+      }
+      tried.add(slot);
+      let calls = 0;
+      try {
+        const target = readTarget(ledger, Math.floor(now() / 1000), wallet, PUMP_PROGRAM_ID);
+        if (!target) {
+          decision = ledger.halted ? 'kill drží pozície' : 'pripoj verejnú adresu';
+          error = null;
+          store(storage, ledger);
+          return snapshot();
+        }
+        const result = await discoverRecentWallets({
+          rpcUrl: `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(keys[slot])}`,
+          timeoutMs: 20_000,
+          maxRetries: 0,
+          retryBaseMs: 0,
+          signatureLimit: 30,
+          minCleanSample: 30,
+          programId: PUMP_PROGRAM_ID,
+        }, {
+          fetch: async (url, init) => {
+            calls += 1;
+            const response = await fetchImpl(url, init);
+            if (response && response.status === 429) {
+              const error = new Error('rpc http 429');
+              error.statusCode = 429;
+              throw error;
+            }
+            return response;
+          },
+          limit: 30,
+          budget: POLL_CREDITS,
+          address: target.address,
+          seen: target.seen,
+          before: target.before || undefined,
+          tipOnly: target.tip === true,
+        });
+        remember(slot, calls);
+        if (token !== generation) {
+          return null;
+        }
+        const cycle = runCycle(ledger, result, Math.floor(now() / 1000), wallet);
+        ledger = { ...cycle.ledger, credits: ledger.credits };
+        decision = cycle.decision;
+        last = {
+          sample: result.sample,
+          walletCount: Array.isArray(result.wallets) ? result.wallets.length : 0,
+          fetchedSignatures: result.fetchedSignatures,
+          creditsRemaining: usable - used[slot],
+          focus: target.address === PUMP_PROGRAM_ID ? 'program' : 'peňaženka',
+        };
+        error = null;
+        store(storage, ledger);
+        return snapshot();
+      } catch (caught) {
+        remember(slot, calls || 1);
+        if (token !== generation) {
+          return null;
+        }
+        if (caught && (caught.statusCode === 429 || String(caught.message || '').includes('429'))) {
+          limited = true;
+          continue;
+        }
+        throw caught;
+      }
     }
-    const result = await discoverRecentWallets({
-      rpcUrl: `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(keys[slot])}`,
-      timeoutMs: 20_000,
-      maxRetries: 1,
-      retryBaseMs: 400,
-      signatureLimit: 30,
-      minCleanSample: 30,
-      programId: PUMP_PROGRAM_ID,
-    }, { fetch: fetchImpl, limit: 30 });
     if (token !== generation) {
       return null;
     }
-    used[slot] += 1 + result.fetchedSignatures;
-    const cycle = runCycle(ledger, result, Math.floor(Date.now() / 1000));
-    ledger = cycle.ledger;
-    decision = cycle.decision;
-    last = {
-      sample: result.sample,
-      walletCount: Array.isArray(result.wallets) ? result.wallets.length : 0,
-      fetchedSignatures: result.fetchedSignatures,
-      creditsRemaining: usable - used[slot],
-    };
-    error = null;
+    if (!keys.some(Boolean)) {
+      running = false;
+      error = 'Chýba aspoň jeden Helius kľúč.';
+    } else if (readySlots(new Set()).length === 0) {
+      running = false;
+      error = 'Mesačný strop kľúčov je plný.';
+    } else if (limited) {
+      error = 'Helius obmedzil tempo. Ďalší kľúč príde v ďalšom kole.';
+    }
     store(storage, ledger);
     return snapshot();
   }
 
-  function readySlots() {
+  function readySlots(skip) {
     return keys
-      .map((key, index) => (key && used[index] + POLL_CREDITS <= usable ? index : -1))
+      .map((key, index) => (key && !skip.has(index) && used[index] + POLL_CREDITS <= usable ? index : -1))
       .filter((index) => index >= 0);
   }
 
-  function pickSlot() {
-    const ready = readySlots();
+  function pickSlot(skip = new Set()) {
+    const ready = readySlots(skip);
     if (ready.length === 0) {
       return -1;
     }
@@ -173,7 +265,7 @@ function createBrowserDesk(options = {}) {
       return snapshot();
     }
     if (!keys.some(Boolean)) {
-      error = 'RPC nie je pripojené. Vlož Helius kľúč vľavo.';
+      error = 'RPC nie je pripojené. Vlož Helius kľúč v kroku 1.';
       throw fail(error, 409);
     }
     generation += 1;
@@ -208,7 +300,7 @@ function createBrowserDesk(options = {}) {
         return;
       }
       if (token === generation && running) {
-        schedule(paceMs(Math.max(1, readySlots().length)), token);
+        schedule(paceMs(Math.max(1, readySlots(new Set()).length)), token);
       }
     }, delay);
   }
@@ -254,9 +346,89 @@ function createBrowserDesk(options = {}) {
   return { snapshot, connectRpc, connectWallet, tick, start, halt, kill, release, handle };
 }
 
+function secretsForProcess(stored, server) {
+  const serverKeys = server && Array.isArray(server.keys) ? server.keys : [];
+  if (serverKeys.some(Boolean) || !stored || typeof stored !== 'object') {
+    return null;
+  }
+  const keys = [0, 1, 2].map((index) => {
+    const value = Array.isArray(stored.keys) ? String(stored.keys[index] || '') : '';
+    return RPC_KEY.test(value) ? value : '';
+  });
+  if (!keys.some(Boolean)) {
+    return null;
+  }
+  const projects = [0, 1, 2].map((index) => {
+    const value = Array.isArray(stored.projects) ? String(stored.projects[index] || '') : '';
+    return PROJECT_UUID.test(value) ? value : '';
+  });
+  const wallet = readPublicAddress(stored.wallet);
+  return {
+    key1: keys[0],
+    key2: keys[1],
+    key3: keys[2],
+    project1: projects[0],
+    project2: projects[1],
+    project3: projects[2],
+    wallet: wallet || null,
+  };
+}
+
+function tabHoldsDesk(snapshot) {
+  if (!snapshot) {
+    return false;
+  }
+  if (snapshot.running || snapshot.halted) {
+    return true;
+  }
+  const book = snapshot.book || {};
+  return (book.openPositions || 0) + (book.ordersTotal || 0) + (book.trades || 0) > 0;
+}
+
 function paceMs(keyCount) {
   const perKey = Math.ceil((POLL_CREDITS * MONTH_MS) / USABLE_CREDITS);
   return Math.ceil(perKey / Math.max(1, keyCount));
+}
+
+function readPublicAddress(value) {
+  const text = String(value || '').replace(/\s+/g, '');
+  return PUBLIC_ADDRESS.test(text) ? text : '';
+}
+
+function loadSecrets(storage) {
+  const empty = { keys: ['', '', ''], projects: ['', '', ''], wallet: null };
+  if (!storage) {
+    return empty;
+  }
+  try {
+    const raw = JSON.parse(storage.getItem(SECRET_KEY) || 'null');
+    if (!raw || typeof raw !== 'object') {
+      return empty;
+    }
+    const keys = [0, 1, 2].map((index) => {
+      const value = Array.isArray(raw.keys) ? String(raw.keys[index] || '') : '';
+      return RPC_KEY.test(value) ? value : '';
+    });
+    const projects = [0, 1, 2].map((index) => {
+      const value = Array.isArray(raw.projects) ? String(raw.projects[index] || '') : '';
+      return PROJECT_UUID.test(value) ? value : '';
+    });
+    const wallet = readPublicAddress(raw.wallet);
+    return { keys, projects, wallet: wallet || null };
+  } catch {
+    return empty;
+  }
+}
+
+function saveSecrets(storage, secrets) {
+  if (!storage) {
+    return;
+  }
+  storage.setItem(SECRET_KEY, JSON.stringify({
+    keys: secrets.keys,
+    projects: secrets.projects,
+    wallet: secrets.wallet,
+  }));
 }
 
 function loadStored(storage) {
@@ -278,9 +450,12 @@ function store(storage, ledger) {
     version: 1,
     mode: 'paper',
     halted: ledger.halted,
-    trades: ledger.trades,
+    wallets: ledger.wallets,
     orders: ledger.orders,
     positions: ledger.positions,
+    credits: ledger.credits,
+    programSeen: ledger.programSeen,
+    notice: ledger.notice,
   };
   storage.setItem(BOOK_KEY, JSON.stringify(copy));
 }
@@ -290,25 +465,77 @@ function bookOf(ledger) {
   return {
     halted: ledger.halted,
     openPositions: ledger.positions.length,
-    ordersToday: ledger.orders.filter((order) => dayOf(order.recordedAt) === day).length,
+    ordersToday: ordersOnDay(ledger.orders, day),
     ordersTotal: ledger.orders.length,
-    trades: ledger.trades.length,
+    trades: Object.values(ledger.wallets).reduce((sum, row) => sum + row.classified, 0),
     positions: ledger.positions.slice(-5).map((position) => ({
-      wallet: shortId(position.wallet),
+      wallet: shortId(position.account || position.wallet),
+      account: shortId(position.account),
+      source: shortId(position.source),
       mint: shortId(position.mint),
       units: position.units,
+      stakeUsd: position.stakeUsd == null ? LIMITS.paperUsd : position.stakeUsd,
+      stop: position.stopPrice == null ? null : position.stopPrice,
     })),
     recentOrders: ledger.orders.slice(-5).map((order) => ({
       side: order.side,
-      wallet: shortId(order.wallet),
+      wallet: shortId(order.account || order.wallet),
+      source: shortId(order.source),
       mint: shortId(order.mint),
     })),
-    ladder: traderLadder(ledger.trades).map((row) => ({
+    ladder: traderLadder(ledger, Math.floor(Date.now() / 1000)).map((row) => ({
       address: shortId(row.address),
       classified: row.classified,
-      need: LIMITS.minTraderSamples,
+      need: row.need,
       side: row.side,
       mint: shortId(row.mint),
+      rank: row.rank,
+      ageSec: row.ageSec,
+      qualified: row.qualified,
+      stakeUsd: row.stakeUsd,
+      reason: row.reason,
+      lastSignature: shortId(row.lastSignature),
+    })),
+    summary: summarizePaper(ledger),
+    review: publicReview(evaluateBook(ledger, Math.floor(Date.now() / 1000))),
+  };
+}
+
+function publicReview(review) {
+  return {
+    verdict: review.verdict,
+    profitUsd: review.profitUsd,
+    lossUsd: review.lossUsd,
+    netUsd: review.netUsd,
+    wins: review.wins,
+    losses: review.losses,
+    open: review.open,
+    bankUsd: review.bankUsd,
+    equityUsd: review.equityUsd,
+    lockedUsd: review.lockedUsd,
+    freeUsd: review.freeUsd,
+    watching: review.watching.map((row) => ({
+      rank: row.rank,
+      address: shortId(row.address),
+      classified: row.classified,
+      need: row.need,
+      side: row.side,
+      mint: shortId(row.mint),
+      lastSignature: shortId(row.lastSignature),
+      stakeUsd: row.stakeUsd,
+      verdict: row.verdict,
+    })),
+    trades: review.trades.map((trade) => ({
+      side: trade.side,
+      state: trade.state,
+      source: shortId(trade.source),
+      mint: shortId(trade.mint),
+      stakeUsd: trade.stakeUsd,
+      entryPrice: trade.entryPrice,
+      exitPrice: trade.exitPrice,
+      resultBps: trade.resultBps,
+      resultUsd: trade.resultUsd,
+      verdict: trade.verdict,
     })),
   };
 }
@@ -321,13 +548,6 @@ function roleState(id, running, halted, wallet) {
     return 'drží pozície';
   }
   return running ? 'beží' : 'pripravený';
-}
-
-function dayOf(seconds) {
-  if (!Number.isInteger(seconds)) {
-    return '';
-  }
-  return new Date(seconds * 1000).toISOString().slice(0, 10);
 }
 
 function shortId(value) {
@@ -359,4 +579,6 @@ function fail(message, statusCode) {
 module.exports = {
   createBrowserDesk,
   paceMs,
+  secretsForProcess,
+  tabHoldsDesk,
 };

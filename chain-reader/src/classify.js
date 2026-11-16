@@ -13,15 +13,18 @@ function classifyTrade(tx, payer) {
   const solDelta = meta.postBalances[index] - meta.preBalances[index];
   const token = tokenDeltaForOwner(meta, payer);
   if (!token) {
-    return { side: 'unknown', mint: null, blockTime };
+    return { side: 'unknown', mint: null, blockTime, solLamports: null, tokenRaw: null };
   }
+  const fee = index === 0 && Number.isInteger(meta.fee) ? meta.fee : 0;
+  const solLamports = solDelta < 0 ? Math.max(0, -solDelta - fee) : solDelta + fee;
+  const tokenRaw = (token.delta < 0n ? -token.delta : token.delta).toString();
   if (solDelta < 0 && token.delta > 0n) {
-    return { side: 'buy', mint: token.mint, blockTime };
+    return { side: 'buy', mint: token.mint, blockTime, solLamports, tokenRaw };
   }
   if (solDelta > 0 && token.delta < 0n) {
-    return { side: 'sell', mint: token.mint, blockTime };
+    return { side: 'sell', mint: token.mint, blockTime, solLamports, tokenRaw };
   }
-  return { side: 'unknown', mint: token.mint, blockTime };
+  return { side: 'unknown', mint: token.mint, blockTime, solLamports, tokenRaw };
 }
 
 function accountIndex(tx, payer) {

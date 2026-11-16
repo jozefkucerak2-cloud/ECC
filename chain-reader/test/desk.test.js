@@ -50,6 +50,18 @@ test('start without keys is refused and the page is served', async () => {
     const html = await page.text();
     assert.equal(page.status, 200);
     assert.match(html, /Spustiť paper/);
+    assert.match(html, /tabHoldsDesk/);
+    assert.match(html, /secretsForProcess/);
+    assert.match(html, /Paper 50 USD/);
+    assert.match(html, /Zostatok/);
+    assert.match(html, /id="status" aria-live="polite"/);
+    assert.match(html, /@media \(max-width: 980px\)[\s\S]*\.metrics\.money \{ grid-template-columns: 1fr 1fr; \}/);
+    assert.match(html, /@media \(max-width: 640px\)[\s\S]*\.metrics\.money, \.metrics\.tight \{ grid-template-columns: 1fr; \}/);
+    assert.match(html, /Otvorené pozície/);
+    assert.match(html, /Zatvorené pozície/);
+    assert.match(html, /Koho sledujeme/);
+    assert.match(html, /Zatvorené pozície/);
+    assert.match(html, /Vyhodnotenie/);
     assert.match(html, /node chain-reader\/src\/serve\.js/);
     assert.match(html, /127\.0\.0\.1:8787/);
     const engine = await fetch(`http://127.0.0.1:${port}/engine.js`);
@@ -221,6 +233,34 @@ test('a Helius address is stored as its key', () => {
   assert.equal(JSON.stringify(saved).includes('mainnet.helius-rpc.com'), false);
 });
 
+test('a rejected Helius key is named in Slovak and the raw code stays off the page', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const desk = createDesk({
+    env: {},
+    paperPath: path.join(directory, 'paper.json'),
+    secretPath: path.join(directory, 'rpc.json'),
+    createPool: () => ({
+      async refreshUsage() {},
+      msUntilPoll() {
+        return 0;
+      },
+      async discover() {
+        throw new Error(`rpc http 401 api-key=${KEY}`);
+      },
+    }),
+    watch: async (pool) => {
+      await pool.discover();
+    },
+  });
+  desk.connectRpc({ key1: KEY });
+  desk.connectWallet({ address: 'So11111111111111111111111111111111111111112' });
+  await desk.start();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(desk.snapshot().error, 'Helius kľúč bol odmietnutý.');
+  assert.equal(desk.snapshot().running, false);
+  assert.equal(JSON.stringify(desk.snapshot()).includes(KEY), false);
+});
+
 test('a private key is refused and a public address is kept', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
   const desk = createDesk({
@@ -268,6 +308,12 @@ test('the ladder counts clean trades toward 30', () => {
   assert.equal(ladder[0].need, 30);
   assert.equal(ladder[0].side, 'buy');
   assert.equal(JSON.stringify(ladder).includes(address), false);
+  const review = desk.snapshot().book.review;
+  assert.equal(review.watching.length, 1);
+  assert.equal(review.watching[0].classified, 4);
+  assert.match(review.watching[0].verdict, /ďalší/);
+  assert.match(review.verdict, /Sledujeme 1 peňaženku/);
+  assert.equal(JSON.stringify(review).includes(address), false);
 });
 
 test('a restarted desk still shows kill from the book', async () => {
@@ -322,6 +368,66 @@ test('a restarted desk still shows kill from the book', async () => {
   const saved = JSON.parse(fs.readFileSync(paperPath, 'utf8'));
   assert.equal(saved.halted, false);
   assert.equal(saved.positions.length, 1);
+});
+
+test('kill stops the reader and a missing address never calls it', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  let calls = 0;
+  const desk = createDesk({
+    env: { HELIUS_API_KEY_1: KEY, ELITE_SOLANA_RPC_URL: 'https://rpc.example' },
+    paperPath: path.join(directory, 'paper.json'),
+    createPool: () => ({
+      async refreshUsage() {},
+      msUntilPoll() {
+        return 0;
+      },
+      async discover() {
+        calls += 1;
+        return { trades: [], wallets: [], fetchedSignatures: 0, sample: 'insufficient', examined: [] };
+      },
+    }),
+    watch: async (pool, options) => {
+      while (!options.signal.aborted) {
+        const extra = options.discoverOptions();
+        if (!extra || !extra.skip) {
+          const result = await pool.discover(extra);
+          if (!options.signal.aborted && options.onResult) {
+            options.onResult(result);
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      }
+    },
+  });
+  await desk.start();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(calls, 0);
+  desk.connectWallet({ address: 'So11111111111111111111111111111111111111112' });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.ok(calls >= 1);
+  const frozen = calls;
+  const killed = await desk.kill();
+  assert.equal(killed.running, false);
+  assert.equal(killed.halted, true);
+  assert.equal(killed.decision, 'kill drží pozície');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(calls, frozen);
+});
+
+test('a restarted process keeps the saved Helius key out of the status', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const paperPath = path.join(directory, 'paper.json');
+  const secretPath = path.join(directory, 'rpc.json');
+  const first = createDesk({ env: {}, paperPath, secretPath });
+  first.connectRpc({ key1: KEY });
+  first.connectWallet({ address: 'So11111111111111111111111111111111111111112' });
+  const second = createDesk({ env: {}, paperPath, secretPath });
+  const snap = second.snapshot();
+  assert.deepEqual(snap.keys, [true, false, false]);
+  assert.equal(snap.wallet, 'So11111111111111111111111111111111111111112');
+  assert.equal(JSON.stringify(snap).includes(KEY), false);
+  assert.equal(snap.book.summary.open, 0);
+  assert.equal(snap.book.summary.realizedBps, 0);
 });
 
 test('kill keeps the paper book and does not echo a key', async () => {
