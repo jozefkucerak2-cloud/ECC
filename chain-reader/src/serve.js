@@ -7,7 +7,7 @@ const path = require('node:path');
 const { loadConfig } = require('./config');
 const { createHeliusPool, watchPool } = require('./helius');
 const { parseHeliusKey } = require('./helius-key');
-const { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, runCycle, traderLadder } = require('./paper/cycle');
+const { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, runCycle, summarizePaper, traderLadder } = require('./paper/cycle');
 
 const DESK_FILE = path.join(__dirname, '..', 'desk', 'index.html');
 const ENGINE_FILE = path.join(__dirname, '..', 'desk', 'engine.js');
@@ -386,6 +386,7 @@ function bookOf(file) {
       side: row.side,
       mint: shortId(row.mint),
     })),
+    summary: summarizePaper(ledger),
   };
 }
 

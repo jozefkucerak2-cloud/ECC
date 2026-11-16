@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { classifyTrade } = require('../src/classify');
-const { emptyLedger, focusAddress, loadLedger, haltLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, LIMITS } = require('../src/paper/cycle');
+const { emptyLedger, focusAddress, loadLedger, haltLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, LIMITS } = require('../src/paper/cycle');
 
 const NOW = 1_700_000_000;
 const MINT = 'Mint111111111111111111111111111111111111111';
@@ -141,6 +141,35 @@ test('a price through the stop closes the paper row and the notice is its own li
   assert.match(notifier, /Stop/);
   assert.match(notifier, /Telefón/);
   assert.notEqual(notifier, executor);
+  const stop = closed.ledger.orders.find((order) => order.side === 'stop');
+  assert.equal(stop.entryPrice, 1);
+  assert.equal(stop.exitPrice, 1 / 1_000_000);
+  const summary = summarizePaper(closed.ledger);
+  assert.equal(summary.open, 0);
+  assert.equal(summary.closed, 1);
+  assert.equal(summary.losses, 1);
+  assert.ok(summary.realizedBps < 0);
+});
+
+test('paper summary sums closed results and keeps the open row', () => {
+  const summary = summarizePaper({
+    orders: [
+      { id: 'A:S:M:buy:sig', account: 'A', source: 'S', mint: 'Mint', side: 'buy', entryPrice: 2, recordedAt: 10 },
+      { id: 'stop:A:S:M:buy:sig:exit', account: 'A', source: 'S', mint: 'Mint', side: 'stop', entryPrice: 2, exitPrice: 1.7, recordedAt: 20 },
+      { id: 'A:S:N:buy:sig2', account: 'A', source: 'S', mint: 'Next', side: 'buy', entryPrice: 4, stopPrice: 3.4, recordedAt: 30 },
+      { id: 'A:S:N:sell:sig3', account: 'A', source: 'S', mint: 'Next', side: 'sell', entryPrice: 4.4, recordedAt: 40 },
+    ],
+    positions: [],
+  });
+  assert.equal(summary.realizedBps, -500);
+  assert.equal(summary.closed, 2);
+  assert.equal(summary.wins, 1);
+  assert.equal(summary.losses, 1);
+  assert.equal(summary.open, 0);
+  assert.equal(summary.rounds[0].state, 'sell');
+  assert.equal(summary.rounds[0].resultBps, 1000);
+  assert.equal(summary.rounds[1].state, 'stop');
+  assert.equal(summary.rounds[1].resultBps, -1500);
 });
 
 test('an unknown signature is remembered so the next poll can walk older history', () => {

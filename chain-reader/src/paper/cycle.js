@@ -444,6 +444,9 @@ function applyStops(ledger, trades, nowSeconds) {
       mint: position.mint,
       side: 'stop',
       signature: trade.signature,
+      entryPrice: position.entryPrice,
+      exitPrice: price,
+      units: position.units,
       recordedAt: nowSeconds,
       mode: 'paper',
     })));
@@ -485,6 +488,89 @@ function priceOf(trade) {
   return sol / tokens;
 }
 
+function summarizePaper(ledger) {
+  const source = ledger && typeof ledger === 'object' ? ledger : {};
+  const orders = Array.isArray(source.orders) ? source.orders : [];
+  const open = new Map();
+  const rounds = [];
+  for (const order of orders) {
+    if (!order || typeof order !== 'object') {
+      continue;
+    }
+    if (order.side === 'buy' && order.id) {
+      open.set(order.id, order);
+      continue;
+    }
+    if (order.side === 'sell') {
+      const entry = [...open.values()].find((item) => item.account === order.account && item.source === order.source && item.mint === order.mint);
+      if (entry) {
+        open.delete(entry.id);
+      }
+      rounds.push(closedRound(entry, order, 'sell', finite(order.entryPrice)));
+      continue;
+    }
+    if (order.side !== 'stop' || typeof order.id !== 'string' || !order.id.startsWith('stop:')) {
+      continue;
+    }
+    const positionId = order.id.slice('stop:'.length, order.id.lastIndexOf(':'));
+    const entry = open.get(positionId) || null;
+    if (entry) {
+      open.delete(positionId);
+    }
+    const exitPrice = finite(order.exitPrice) ?? finite(entry && entry.stopPrice);
+    rounds.push(closedRound(entry, order, 'stop', exitPrice));
+  }
+  for (const position of Array.isArray(source.positions) ? source.positions : []) {
+    rounds.push({
+      id: position.id || '',
+      mint: position.mint || '',
+      source: position.source || '',
+      account: position.account || '',
+      entryPrice: finite(position.entryPrice),
+      exitPrice: null,
+      resultBps: null,
+      state: 'otvorený',
+      at: Number.isInteger(position.openedAt) ? position.openedAt : null,
+    });
+  }
+  const scored = rounds.filter((round) => round.state !== 'otvorený' && round.resultBps != null);
+  return {
+    realizedBps: scored.reduce((sum, round) => sum + round.resultBps, 0),
+    closed: scored.length,
+    wins: scored.filter((round) => round.resultBps > 0).length,
+    losses: scored.filter((round) => round.resultBps < 0).length,
+    open: Array.isArray(source.positions) ? source.positions.length : 0,
+    rounds: rounds.slice(-12).reverse(),
+  };
+}
+
+function closedRound(entry, order, state, exitPrice) {
+  const entryPrice = finite(entry && entry.entryPrice) ?? finite(order.entryPrice);
+  return {
+    id: order.id || '',
+    mint: (entry && entry.mint) || order.mint || '',
+    source: (entry && entry.source) || order.source || '',
+    account: (entry && entry.account) || order.account || '',
+    entryPrice,
+    exitPrice,
+    resultBps: resultBps(entryPrice, exitPrice),
+    state,
+    at: Number.isInteger(order.recordedAt) ? order.recordedAt : null,
+  };
+}
+
+function finite(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function resultBps(entry, exit) {
+  if (entry == null || exit == null || entry <= 0) {
+    return null;
+  }
+  return Math.round(((exit - entry) / entry) * 10_000);
+}
+
 function ordersOnDay(orders, day) {
   return (Array.isArray(orders) ? orders : []).filter((item) => item && item.side !== 'stop' && utcDay(item.recordedAt) === day).length;
 }
@@ -507,5 +593,6 @@ module.exports = {
   focusAddress,
   readTarget,
   ordersOnDay,
+  summarizePaper,
   runCycle,
 };

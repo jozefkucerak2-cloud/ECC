@@ -3,7 +3,7 @@
 const { PUMP_PROGRAM_ID } = require('./config');
 const { discoverRecentWallets } = require('./discover');
 const { parseHeliusKey, RPC_KEY } = require('./helius-key');
-const { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, traderLadder } = require('./paper/cycle');
+const { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder } = require('./paper/cycle');
 
 const POLL_CREDITS = 31;
 const USABLE_CREDITS = 950_000;
@@ -345,6 +345,34 @@ function createBrowserDesk(options = {}) {
   return { snapshot, connectRpc, connectWallet, tick, start, halt, kill, release, handle };
 }
 
+function secretsForProcess(stored, server) {
+  const serverKeys = server && Array.isArray(server.keys) ? server.keys : [];
+  if (serverKeys.some(Boolean) || !stored || typeof stored !== 'object') {
+    return null;
+  }
+  const keys = [0, 1, 2].map((index) => {
+    const value = Array.isArray(stored.keys) ? String(stored.keys[index] || '') : '';
+    return RPC_KEY.test(value) ? value : '';
+  });
+  if (!keys.some(Boolean)) {
+    return null;
+  }
+  const projects = [0, 1, 2].map((index) => {
+    const value = Array.isArray(stored.projects) ? String(stored.projects[index] || '') : '';
+    return PROJECT_UUID.test(value) ? value : '';
+  });
+  const wallet = readPublicAddress(stored.wallet);
+  return {
+    key1: keys[0],
+    key2: keys[1],
+    key3: keys[2],
+    project1: projects[0],
+    project2: projects[1],
+    project3: projects[2],
+    wallet: wallet || null,
+  };
+}
+
 function tabHoldsDesk(snapshot) {
   if (!snapshot) {
     return false;
@@ -460,6 +488,7 @@ function bookOf(ledger) {
       side: row.side,
       mint: shortId(row.mint),
     })),
+    summary: summarizePaper(ledger),
   };
 }
 
@@ -502,5 +531,6 @@ function fail(message, statusCode) {
 module.exports = {
   createBrowserDesk,
   paceMs,
+  secretsForProcess,
   tabHoldsDesk,
 };

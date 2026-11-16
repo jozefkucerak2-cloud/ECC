@@ -873,6 +873,9 @@ var EliteEngine = (() => {
             mint: position.mint,
             side: "stop",
             signature: trade.signature,
+            entryPrice: position.entryPrice,
+            exitPrice: price,
+            units: position.units,
             recordedAt: nowSeconds,
             mode: "paper"
           })));
@@ -908,6 +911,85 @@ var EliteEngine = (() => {
         }
         return sol / tokens;
       }
+      function summarizePaper(ledger) {
+        const source = ledger && typeof ledger === "object" ? ledger : {};
+        const orders = Array.isArray(source.orders) ? source.orders : [];
+        const open = /* @__PURE__ */ new Map();
+        const rounds = [];
+        for (const order of orders) {
+          if (!order || typeof order !== "object") {
+            continue;
+          }
+          if (order.side === "buy" && order.id) {
+            open.set(order.id, order);
+            continue;
+          }
+          if (order.side === "sell") {
+            const entry2 = [...open.values()].find((item) => item.account === order.account && item.source === order.source && item.mint === order.mint);
+            if (entry2) {
+              open.delete(entry2.id);
+            }
+            rounds.push(closedRound(entry2, order, "sell", finite(order.entryPrice)));
+            continue;
+          }
+          if (order.side !== "stop" || typeof order.id !== "string" || !order.id.startsWith("stop:")) {
+            continue;
+          }
+          const positionId = order.id.slice("stop:".length, order.id.lastIndexOf(":"));
+          const entry = open.get(positionId) || null;
+          if (entry) {
+            open.delete(positionId);
+          }
+          const exitPrice = finite(order.exitPrice) ?? finite(entry && entry.stopPrice);
+          rounds.push(closedRound(entry, order, "stop", exitPrice));
+        }
+        for (const position of Array.isArray(source.positions) ? source.positions : []) {
+          rounds.push({
+            id: position.id || "",
+            mint: position.mint || "",
+            source: position.source || "",
+            account: position.account || "",
+            entryPrice: finite(position.entryPrice),
+            exitPrice: null,
+            resultBps: null,
+            state: "otvoren\xFD",
+            at: Number.isInteger(position.openedAt) ? position.openedAt : null
+          });
+        }
+        const scored = rounds.filter((round) => round.state !== "otvoren\xFD" && round.resultBps != null);
+        return {
+          realizedBps: scored.reduce((sum, round) => sum + round.resultBps, 0),
+          closed: scored.length,
+          wins: scored.filter((round) => round.resultBps > 0).length,
+          losses: scored.filter((round) => round.resultBps < 0).length,
+          open: Array.isArray(source.positions) ? source.positions.length : 0,
+          rounds: rounds.slice(-12).reverse()
+        };
+      }
+      function closedRound(entry, order, state, exitPrice) {
+        const entryPrice = finite(entry && entry.entryPrice) ?? finite(order.entryPrice);
+        return {
+          id: order.id || "",
+          mint: entry && entry.mint || order.mint || "",
+          source: entry && entry.source || order.source || "",
+          account: entry && entry.account || order.account || "",
+          entryPrice,
+          exitPrice,
+          resultBps: resultBps(entryPrice, exitPrice),
+          state,
+          at: Number.isInteger(order.recordedAt) ? order.recordedAt : null
+        };
+      }
+      function finite(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
+      }
+      function resultBps(entry, exit) {
+        if (entry == null || exit == null || entry <= 0) {
+          return null;
+        }
+        return Math.round((exit - entry) / entry * 1e4);
+      }
       function ordersOnDay(orders, day) {
         return (Array.isArray(orders) ? orders : []).filter((item) => item && item.side !== "stop" && utcDay(item.recordedAt) === day).length;
       }
@@ -928,6 +1010,7 @@ var EliteEngine = (() => {
         focusAddress,
         readTarget,
         ordersOnDay,
+        summarizePaper,
         runCycle
       };
     }
@@ -939,7 +1022,7 @@ var EliteEngine = (() => {
       var { PUMP_PROGRAM_ID } = require_config();
       var { discoverRecentWallets } = require_discover();
       var { parseHeliusKey, RPC_KEY } = require_helius_key();
-      var { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, traderLadder } = require_cycle();
+      var { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder } = require_cycle();
       var POLL_CREDITS = 31;
       var USABLE_CREDITS = 95e4;
       var MONTH_MS = 30 * 24 * 60 * 60 * 1e3;
@@ -1260,6 +1343,33 @@ var EliteEngine = (() => {
         }
         return { snapshot, connectRpc, connectWallet, tick, start, halt, kill, release, handle };
       }
+      function secretsForProcess(stored, server) {
+        const serverKeys = server && Array.isArray(server.keys) ? server.keys : [];
+        if (serverKeys.some(Boolean) || !stored || typeof stored !== "object") {
+          return null;
+        }
+        const keys = [0, 1, 2].map((index) => {
+          const value = Array.isArray(stored.keys) ? String(stored.keys[index] || "") : "";
+          return RPC_KEY.test(value) ? value : "";
+        });
+        if (!keys.some(Boolean)) {
+          return null;
+        }
+        const projects = [0, 1, 2].map((index) => {
+          const value = Array.isArray(stored.projects) ? String(stored.projects[index] || "") : "";
+          return PROJECT_UUID.test(value) ? value : "";
+        });
+        const wallet = readPublicAddress(stored.wallet);
+        return {
+          key1: keys[0],
+          key2: keys[1],
+          key3: keys[2],
+          project1: projects[0],
+          project2: projects[1],
+          project3: projects[2],
+          wallet: wallet || null
+        };
+      }
       function tabHoldsDesk(snapshot) {
         if (!snapshot) {
           return false;
@@ -1367,7 +1477,8 @@ var EliteEngine = (() => {
             need: LIMITS.minTraderSamples,
             side: row.side,
             mint: shortId(row.mint)
-          }))
+          })),
+          summary: summarizePaper(ledger)
         };
       }
       function roleState(id, running, halted, wallet) {
@@ -1404,6 +1515,7 @@ var EliteEngine = (() => {
       module.exports = {
         createBrowserDesk,
         paceMs,
+        secretsForProcess,
         tabHoldsDesk
       };
     }

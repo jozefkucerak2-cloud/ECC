@@ -51,6 +51,8 @@ test('start without keys is refused and the page is served', async () => {
     assert.equal(page.status, 200);
     assert.match(html, /Spustiť paper/);
     assert.match(html, /tabHoldsDesk/);
+    assert.match(html, /secretsForProcess/);
+    assert.match(html, /Paper súhrn/);
     assert.match(html, /node chain-reader\/src\/serve\.js/);
     assert.match(html, /127\.0\.0\.1:8787/);
     const engine = await fetch(`http://127.0.0.1:${port}/engine.js`);
@@ -395,6 +397,22 @@ test('kill stops the reader and a missing address never calls it', async () => {
   assert.equal(killed.decision, 'kill drží pozície');
   await new Promise((resolve) => setTimeout(resolve, 40));
   assert.equal(calls, frozen);
+});
+
+test('a restarted process keeps the saved Helius key out of the status', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const paperPath = path.join(directory, 'paper.json');
+  const secretPath = path.join(directory, 'rpc.json');
+  const first = createDesk({ env: {}, paperPath, secretPath });
+  first.connectRpc({ key1: KEY });
+  first.connectWallet({ address: 'So11111111111111111111111111111111111111112' });
+  const second = createDesk({ env: {}, paperPath, secretPath });
+  const snap = second.snapshot();
+  assert.deepEqual(snap.keys, [true, false, false]);
+  assert.equal(snap.wallet, 'So11111111111111111111111111111111111111112');
+  assert.equal(JSON.stringify(snap).includes(KEY), false);
+  assert.equal(snap.book.summary.open, 0);
+  assert.equal(snap.book.summary.realizedBps, 0);
 });
 
 test('kill keeps the paper book and does not echo a key', async () => {

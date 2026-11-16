@@ -163,6 +163,9 @@
     .block-head p { margin: 0; color: var(--faint); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
     .count { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 500; font-size: 13px; }
     .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .metrics.wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    #pnl.up { color: var(--moss); }
+    #pnl.down { color: var(--clay); }
     .metric { padding: 12px; border-radius: 14px; background: var(--panel-2); }
     .metric small { display: block; color: var(--faint); font-size: 12px; }
     .metric b { display: block; margin-top: 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
@@ -199,7 +202,7 @@
       header, main { padding-left: 16px; padding-right: 16px; }
       header { flex-wrap: wrap; }
       .clock { margin-left: 0; }
-      .setup, .board, .gates, .metrics { grid-template-columns: 1fr; }
+      .setup, .board, .gates, .metrics, .metrics.wide { grid-template-columns: 1fr; }
       #status { font-size: 26px; }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -266,7 +269,7 @@
             <div class="row">
               <button class="solid" id="save-rpc" type="submit">Uložiť kľúč</button>
             </div>
-            <p class="fine" id="saved-keys">Zatiaľ žiadny kľúč. Po uložení pole ostane prázdne a kľúč sa na ploche neukáže.</p>
+            <p class="fine" id="saved-keys">Zatiaľ žiadny kľúč. Po uložení ostane v lokálnom procese a na ploche sa neukáže.</p>
           </form>
         </article>
         <article class="card" id="card-wallet">
@@ -288,6 +291,18 @@
           </form>
         </article>
       </section>
+      <section class="card" id="card-summary">
+        <div class="block-head"><p>Paper súhrn</p><p class="count" id="pnl-count">0 ziskov · 0 strát · 0 otvorených</p></div>
+        <div class="metrics wide">
+          <div class="metric"><small>Výsledok</small><b id="pnl">0,0 %</b></div>
+          <div class="metric"><small>Otvorené</small><b id="sum-open">0</b></div>
+          <div class="metric"><small>Zatvorené</small><b id="sum-closed">0</b></div>
+          <div class="metric"><small>Posledné kolo</small><b id="decision">bez príkazu</b></div>
+        </div>
+        <p class="empty" id="rounds-empty">Zatiaľ žiadny paper obchod. Prvý zápis príde po 30 čistých obchodoch a čerstvom signáli.</p>
+        <ul class="rows" id="rounds"></ul>
+        <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
+      </section>
       <section class="board">
         <article class="card" id="card-run">
           <div class="block-head"><p>Rebríček</p><p class="count" id="ladder-count">0 / 30</p></div>
@@ -305,14 +320,13 @@
           <p class="empty" id="book-empty">Žiadna paper pozícia.</p>
           <ul class="rows" id="positions"></ul>
           <ul class="rows" id="orders"></ul>
-          <div class="block-head" style="margin-top:18px"><p>Posledné kolo</p><p class="count" id="decision">bez príkazu</p></div>
+          <div class="block-head" style="margin-top:18px"><p>Posledné kolo</p></div>
           <div class="metrics">
             <div class="metric"><small>Vzorka</small><b id="sample">čaká</b></div>
             <div class="metric"><small>Peňaženky</small><b id="wallets">0</b></div>
             <div class="metric"><small>Podpisy</small><b id="fetched">0</b></div>
             <div class="metric"><small>Kredity</small><b id="credits">čaká</b></div>
           </div>
-          <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
           <p class="fine" id="program">Program pump 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P.</p>
         </article>
         <article class="card">
@@ -347,6 +361,46 @@
     function text(id, value) {
       const node = document.getElementById(id);
       if (node) node.textContent = value;
+    }
+
+    function formatBps(bps) {
+      const percent = (Number.isFinite(bps) ? bps : 0) / 100;
+      const sign = percent > 0 ? '+' : '';
+      return sign + percent.toLocaleString('sk-SK', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
+    }
+
+    function formatPrice(value) {
+      return Number.isFinite(value) ? Number(value).toPrecision(4) : '—';
+    }
+
+    function shortText(value) {
+      const text = String(value || '');
+      return text.length <= 12 ? (text || '—') : text.slice(0, 4) + '…' + text.slice(-4);
+    }
+
+    function roundLabel(state) {
+      if (state === 'stop') return 'stop';
+      if (state === 'sell') return 'predaj';
+      return 'otvorený';
+    }
+
+    function readStoredSecrets() {
+      try {
+        return JSON.parse(localStorage.getItem('elite-desk-secrets') || 'null');
+      } catch {
+        return null;
+      }
+    }
+
+    async function postProcess(path, body) {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-elite-desk': '1' },
+        body: JSON.stringify(body || {}),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'požiadavka zlyhala');
+      return payload;
     }
 
     function clearRpc() {
@@ -394,8 +448,10 @@
       text('key-count', connected + ' / 3 kľúčov');
       [0, 1, 2].forEach((index) => text('slot' + (index + 1), keys[index] ? 'uložený' : 'prázdny'));
       text('saved-keys', connected
-        ? 'Uložené ' + connected + ' z 3. Polia ostávajú prázdne, kľúč sa na ploche neukazuje.'
-        : 'Zatiaľ žiadny kľúč. Po uložení pole ostane prázdne a kľúč sa na ploche neukáže.');
+        ? (browser
+          ? 'Uložené ' + connected + ' z 3 v tejto karte. Keď nabehne lokálny proces, kľúč sa do neho prenesie.'
+          : 'Uložené ' + connected + ' z 3 v lokálnom procese. Po reštarte ostáva. Kľúč sa na ploche neukazuje.')
+        : 'Zatiaľ žiadny kľúč. Po uložení ostane v lokálnom procese a na ploche sa neukáže.');
       text('wallet-state', data.wallet ? data.wallet.slice(0, 4) + '…' + data.wallet.slice(-4) : 'nepripojená');
       document.getElementById('wallet-pill').classList.toggle('on', Boolean(data.wallet));
       text('saved-wallet', data.wallet
@@ -481,6 +537,29 @@
         : (last.creditsRemaining == null ? 'čaká' : String(last.creditsRemaining)));
       text('notice', data.notice || 'Bez nového paper zápisu. Telefón nie je zapojený.');
       text('decision', data.decision || 'bez príkazu');
+      const summary = book.summary || {};
+      const bps = Number.isFinite(summary.realizedBps) ? summary.realizedBps : 0;
+      const pnl = document.getElementById('pnl');
+      pnl.textContent = formatBps(bps);
+      pnl.classList.toggle('up', bps > 0);
+      pnl.classList.toggle('down', bps < 0);
+      text('sum-open', String(summary.open || 0));
+      text('sum-closed', String(summary.closed || 0));
+      text('pnl-count', (summary.wins || 0) + ' ziskov · ' + (summary.losses || 0) + ' strát · ' + (summary.open || 0) + ' otvorených');
+      const rounds = document.getElementById('rounds');
+      const roundRows = Array.isArray(summary.rounds) ? summary.rounds : [];
+      rounds.replaceChildren();
+      document.getElementById('rounds-empty').hidden = roundRows.length > 0;
+      roundRows.forEach((round) => {
+        const item = document.createElement('li');
+        const name = document.createElement('strong');
+        name.textContent = shortText(round.mint) + ' · ' + roundLabel(round.state);
+        const meta = document.createElement('span');
+        const result = round.state === 'otvorený' ? 'beží' : (round.resultBps == null ? 'bez ceny' : formatBps(round.resultBps));
+        meta.textContent = result + ' · vstup ' + formatPrice(round.entryPrice) + ' · výstup ' + formatPrice(round.exitPrice);
+        item.append(name, meta);
+        rounds.append(item);
+      });
       const config = data.config || {};
       if (config.ok) {
         text('program', 'Program ' + config.programId + '. Strana ' + config.signatureLimit + ', čistá vzorka ' + config.minCleanSample + '.');
@@ -540,9 +619,23 @@
     }
 
     async function handToProcess() {
-      const data = await readStatus();
+      let data = await readStatus();
       serverKnown = true;
       if (browserHoldsWork()) return false;
+      const body = globalThis.EliteEngine && EliteEngine.secretsForProcess(readStoredSecrets(), data);
+      if (body) {
+        data = await postProcess('/api/rpc', {
+          key1: body.key1,
+          key2: body.key2,
+          key3: body.key3,
+          project1: body.project1,
+          project2: body.project2,
+          project3: body.project3,
+        });
+        if (body.wallet && !data.wallet) {
+          data = await postProcess('/api/wallet', { address: body.wallet });
+        }
+      }
       if (browser) {
         browser.halt();
         browser = null;
