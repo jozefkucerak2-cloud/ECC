@@ -3,7 +3,7 @@
 const { PUMP_PROGRAM_ID } = require('./config');
 const { discoverRecentWallets } = require('./discover');
 const { parseHeliusKey, RPC_KEY } = require('./helius-key');
-const { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder } = require('./paper/cycle');
+const { LIMITS, emptyLedger, evaluateBook, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder } = require('./paper/cycle');
 
 const POLL_CREDITS = 31;
 const USABLE_CREDITS = 950_000;
@@ -20,6 +20,7 @@ const ROLES = Object.freeze([
   { id: 'ceo', name: 'CEO', detail: 'Návrh posunie ďalej. Limity nezmení a veto neprepíše.' },
   { id: 'risk', name: 'Risk governor', detail: 'Pustí paper príkaz za 50 USD len na pripojenú verejnú adresu, do 3 pozícií a 10 príkazov za deň. Stop je 15 % pod vstupom. Live odoslanie nie je zapnuté.' },
   { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz na našu verejnú adresu. Na sieť nič neposiela.' },
+  { id: 'evaluator', name: 'Vyhodnotenie', detail: 'Pozrie, koho sledujeme, ktoré transakcie prebehli a či je to zisk alebo strata.' },
   { id: 'notifier', name: 'Hlásenie', detail: 'Samostatný riadok na tejto ploche. Telefón sa zapojí až po zvolení kanála.' },
   { id: 'wallet', name: 'Phantom', detail: 'Ostáva odpojená. Live podpis nie je v tomto behu.' },
 ]);
@@ -492,8 +493,45 @@ function bookOf(ledger) {
       qualified: row.qualified,
       stakeUsd: row.stakeUsd,
       reason: row.reason,
+      lastSignature: shortId(row.lastSignature),
     })),
     summary: summarizePaper(ledger),
+    review: publicReview(evaluateBook(ledger, Math.floor(Date.now() / 1000))),
+  };
+}
+
+function publicReview(review) {
+  return {
+    verdict: review.verdict,
+    profitUsd: review.profitUsd,
+    lossUsd: review.lossUsd,
+    netUsd: review.netUsd,
+    wins: review.wins,
+    losses: review.losses,
+    open: review.open,
+    watching: review.watching.map((row) => ({
+      rank: row.rank,
+      address: shortId(row.address),
+      classified: row.classified,
+      need: row.need,
+      side: row.side,
+      mint: shortId(row.mint),
+      lastSignature: shortId(row.lastSignature),
+      stakeUsd: row.stakeUsd,
+      verdict: row.verdict,
+    })),
+    trades: review.trades.map((trade) => ({
+      side: trade.side,
+      state: trade.state,
+      source: shortId(trade.source),
+      mint: shortId(trade.mint),
+      stakeUsd: trade.stakeUsd,
+      entryPrice: trade.entryPrice,
+      exitPrice: trade.exitPrice,
+      resultBps: trade.resultBps,
+      resultUsd: trade.resultUsd,
+      verdict: trade.verdict,
+    })),
   };
 }
 

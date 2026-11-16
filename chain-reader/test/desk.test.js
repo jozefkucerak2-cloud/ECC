@@ -53,6 +53,9 @@ test('start without keys is refused and the page is served', async () => {
     assert.match(html, /tabHoldsDesk/);
     assert.match(html, /secretsForProcess/);
     assert.match(html, /Paper 50 USD/);
+    assert.match(html, /Koho sledujeme/);
+    assert.match(html, /Transakcie/);
+    assert.match(html, /Vyhodnotenie/);
     assert.match(html, /node chain-reader\/src\/serve\.js/);
     assert.match(html, /127\.0\.0\.1:8787/);
     const engine = await fetch(`http://127.0.0.1:${port}/engine.js`);
@@ -299,6 +302,12 @@ test('the ladder counts clean trades toward 30', () => {
   assert.equal(ladder[0].need, 30);
   assert.equal(ladder[0].side, 'buy');
   assert.equal(JSON.stringify(ladder).includes(address), false);
+  const review = desk.snapshot().book.review;
+  assert.equal(review.watching.length, 1);
+  assert.equal(review.watching[0].classified, 4);
+  assert.match(review.watching[0].verdict, /ďalší/);
+  assert.match(review.verdict, /Sledujeme 1 peňaženku/);
+  assert.equal(JSON.stringify(review).includes(address), false);
 });
 
 test('a restarted desk still shows kill from the book', async () => {

@@ -90,6 +90,7 @@ function traderLadder(ledger, nowSeconds) {
       need: LIMITS.minTraderSamples,
       side: row.last ? row.last.side : null,
       mint: row.last ? row.last.mint : null,
+      lastSignature: row.last ? row.last.signature : null,
       ageSec: age != null && Number.isFinite(age) ? age : null,
       qualified,
       stakeUsd: LIMITS.paperUsd,
@@ -167,6 +168,7 @@ function runCycle(rawLedger, observation, nowSeconds, account) {
   const risk = govern(copy, ledger, nowSeconds, account);
   const executed = apply(risk, ledger, nowSeconds, account);
   ledger = { ...executed.ledger, notice: noticeFor(stopped.closed, executed) };
+  const judgement = evaluateBook(ledger, nowSeconds);
   const events = [
     { role: 'reader', note: `${incoming.filter((trade) => trade && (trade.side === 'buy' || trade.side === 'sell')).length} čistých v tomto kole` },
     { role: 'analyst', note: analyst.note },
@@ -174,6 +176,7 @@ function runCycle(rawLedger, observation, nowSeconds, account) {
     { role: 'ceo', note: skeptic.veto ? 'veto platí, limity sa nemenia' : 'návrh ide ďalej bez zmeny limitov' },
     { role: 'risk', note: risk.note },
     { role: 'executor', note: executed.note },
+    { role: 'evaluator', note: judgement.verdict },
     { role: 'notifier', note: ledger.notice },
   ];
   const decision = stopped.closed ? 'paper stop zatvoril pozíciu v knihe' : (skeptic.veto ? skeptic.note : executed.note);
@@ -613,6 +616,98 @@ function resultBps(entry, exit) {
   return Math.round(((exit - entry) / entry) * 10_000);
 }
 
+function evaluateBook(raw, nowSeconds) {
+  const ledger = loadLedger(raw);
+  const summary = summarizePaper(ledger);
+  const watching = traderLadder(ledger, nowSeconds).map((row) => ({
+    ...row,
+    verdict: watchVerdict(row),
+  }));
+  const trades = summary.rounds.map((round) => ({
+    id: round.id,
+    side: round.state === 'otvorený' ? 'buy' : round.state,
+    source: round.source,
+    mint: round.mint,
+    account: round.account,
+    stakeUsd: round.stakeUsd,
+    entryPrice: round.entryPrice,
+    exitPrice: round.exitPrice,
+    resultBps: round.resultBps,
+    resultUsd: round.resultUsd,
+    state: round.state,
+    verdict: tradeVerdict(round.state, round.resultUsd),
+  }));
+  const profitUsd = money(summary.rounds.reduce((sum, round) => sum + (round.resultUsd > 0 ? round.resultUsd : 0), 0));
+  const lossUsd = money(summary.rounds.reduce((sum, round) => sum + (round.resultUsd < 0 ? round.resultUsd : 0), 0));
+  return {
+    watching,
+    trades,
+    profitUsd,
+    lossUsd,
+    netUsd: summary.realizedUsd,
+    wins: summary.wins,
+    losses: summary.losses,
+    open: summary.open,
+    verdict: deskVerdict(watching, summary, profitUsd, lossUsd),
+  };
+}
+
+function watchVerdict(row) {
+  if (row.qualified) {
+    return 'pripravený, ďalší môže navrhnúť 50 USD';
+  }
+  if (row.classified >= LIMITS.minTraderSamples) {
+    return 'má 30, ďalší čaká na čerstvý obchod';
+  }
+  if (row.reason === 'história vyčerpaná pred 30') {
+    return 'história nestačila, ďalší ho nekopíruje';
+  }
+  return 'sledujeme, ďalší vyhodnotí pri 30';
+}
+
+function tradeVerdict(state, resultUsd) {
+  if (state === 'otvorený') {
+    return 'otvorený, ďalší vyhodnotí po uzavretí';
+  }
+  if (resultUsd == null) {
+    return 'bez ceny, ďalší čaká na cenu';
+  }
+  if (resultUsd > 0) {
+    return 'zisk, ďalší ho drží v sledovaní';
+  }
+  if (resultUsd < 0) {
+    return 'strata, ďalší berie stop ako platný';
+  }
+  return 'nula, ďalší ho necháva v rebríčku';
+}
+
+function deskVerdict(watched, summary, profitUsd, lossUsd) {
+  if (watched.length === 0 && summary.closed === 0 && summary.open === 0) {
+    return 'Rebríček je prázdny. Ďalší vyhodnotí prvý čistý obchod.';
+  }
+  const lead = watched[0] ? ` Vedie ${watched[0].classified}/${watched[0].need}.` : '';
+  return `Sledujeme ${walletCountLabel(watched.length)}.${lead} Zisk ${plainUsd(profitUsd)} USD, strata ${plainUsd(Math.abs(lossUsd))} USD, čistý ${plainUsd(summary.realizedUsd)} USD. Ďalší vyhodnocuje každý uzavretý paper obchod.`;
+}
+
+function walletCountLabel(count) {
+  if (count === 1) {
+    return '1 peňaženku';
+  }
+  if (count >= 2 && count <= 4) {
+    return `${count} peňaženky`;
+  }
+  return `${count} peňaženiek`;
+}
+
+function money(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function plainUsd(value) {
+  const number = Number.isFinite(value) ? value : 0;
+  return Number.isInteger(number) ? String(number) : String(Math.round(number * 100) / 100);
+}
+
 function ordersOnDay(orders, day) {
   return (Array.isArray(orders) ? orders : []).filter((item) => item && item.side !== 'stop' && utcDay(item.recordedAt) === day).length;
 }
@@ -636,5 +731,6 @@ module.exports = {
   readTarget,
   ordersOnDay,
   summarizePaper,
+  evaluateBook,
   runCycle,
 };

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { classifyTrade } = require('../src/classify');
-const { emptyLedger, focusAddress, loadLedger, haltLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder, LIMITS } = require('../src/paper/cycle');
+const { emptyLedger, evaluateBook, focusAddress, loadLedger, haltLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder, LIMITS } = require('../src/paper/cycle');
 
 const NOW = 1_700_000_000;
 const MINT = 'Mint111111111111111111111111111111111111111';
@@ -75,6 +75,38 @@ test('the agent ladder ranks a filling wallet and prices the paper stake at 50 U
   assert.equal(ladder[0].stakeUsd, 50);
   assert.equal(ladder[0].reason, 'agenti zbierajú vzorku');
   assert.equal(opened.ledger.mode, 'paper');
+});
+
+test('the next agent evaluates who we watch, the transactions, and the dollar result', () => {
+  const opened = runCycle(emptyLedger(), { trades: trades(4, 'buy') }, NOW, OUR);
+  const early = evaluateBook(opened.ledger, NOW);
+  assert.equal(early.watching.length, 1);
+  assert.equal(early.watching[0].classified, 4);
+  assert.equal(early.watching[0].lastSignature, 'buy-3');
+  assert.equal(early.trades.length, 0);
+  assert.equal(early.profitUsd, 0);
+  assert.equal(early.lossUsd, 0);
+  assert.match(early.watching[0].verdict, /ďalší/);
+  assert.match(early.verdict, /Sledujeme 1 peňaženku/);
+  assert.match(opened.events.find((event) => event.role === 'evaluator').note, /Sledujeme/);
+
+  const review = evaluateBook({
+    wallets: {},
+    orders: [
+      { id: 'a', side: 'buy', source: 'WalletA', mint: 'MintA', account: OUR, entryPrice: 1, stakeUsd: 50, recordedAt: 1 },
+      { id: 'stop:a:s', side: 'stop', source: 'WalletA', mint: 'MintA', account: OUR, entryPrice: 1, exitPrice: 0.85, recordedAt: 2 },
+      { id: 'b', side: 'buy', source: 'WalletA', mint: 'MintB', account: OUR, entryPrice: 2, stakeUsd: 50, recordedAt: 3 },
+      { id: 'c', side: 'sell', source: 'WalletA', mint: 'MintB', account: OUR, entryPrice: 2.2, recordedAt: 4 },
+    ],
+    positions: [],
+  }, NOW);
+  assert.equal(review.profitUsd, 5);
+  assert.equal(review.lossUsd, -7.5);
+  assert.equal(review.netUsd, -2.5);
+  assert.match(review.trades.find((trade) => trade.side === 'stop').verdict, /strata/);
+  assert.match(review.trades.find((trade) => trade.side === 'sell').verdict, /zisk/);
+  assert.match(review.verdict, /Zisk 5 USD/);
+  assert.match(review.verdict, /strata 7\.5 USD/);
 });
 
 test('fewer than 30 clean trades produces no order', () => {

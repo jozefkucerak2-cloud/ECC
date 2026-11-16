@@ -549,6 +549,7 @@ var EliteEngine = (() => {
             need: LIMITS.minTraderSamples,
             side: row.last ? row.last.side : null,
             mint: row.last ? row.last.mint : null,
+            lastSignature: row.last ? row.last.signature : null,
             ageSec: age != null && Number.isFinite(age) ? age : null,
             qualified,
             stakeUsd: LIMITS.paperUsd,
@@ -622,6 +623,7 @@ var EliteEngine = (() => {
         const risk = govern(copy, ledger, nowSeconds, account);
         const executed = apply(risk, ledger, nowSeconds, account);
         ledger = { ...executed.ledger, notice: noticeFor(stopped.closed, executed) };
+        const judgement = evaluateBook(ledger, nowSeconds);
         const events = [
           { role: "reader", note: `${incoming.filter((trade) => trade && (trade.side === "buy" || trade.side === "sell")).length} \u010Dist\xFDch v tomto kole` },
           { role: "analyst", note: analyst.note },
@@ -629,6 +631,7 @@ var EliteEngine = (() => {
           { role: "ceo", note: skeptic.veto ? "veto plat\xED, limity sa nemenia" : "n\xE1vrh ide \u010Falej bez zmeny limitov" },
           { role: "risk", note: risk.note },
           { role: "executor", note: executed.note },
+          { role: "evaluator", note: judgement.verdict },
           { role: "notifier", note: ledger.notice }
         ];
         const decision = stopped.closed ? "paper stop zatvoril poz\xEDciu v knihe" : skeptic.veto ? skeptic.note : executed.note;
@@ -1030,6 +1033,91 @@ var EliteEngine = (() => {
         }
         return Math.round((exit - entry) / entry * 1e4);
       }
+      function evaluateBook(raw, nowSeconds) {
+        const ledger = loadLedger(raw);
+        const summary = summarizePaper(ledger);
+        const watching = traderLadder(ledger, nowSeconds).map((row) => ({
+          ...row,
+          verdict: watchVerdict(row)
+        }));
+        const trades = summary.rounds.map((round) => ({
+          id: round.id,
+          side: round.state === "otvoren\xFD" ? "buy" : round.state,
+          source: round.source,
+          mint: round.mint,
+          account: round.account,
+          stakeUsd: round.stakeUsd,
+          entryPrice: round.entryPrice,
+          exitPrice: round.exitPrice,
+          resultBps: round.resultBps,
+          resultUsd: round.resultUsd,
+          state: round.state,
+          verdict: tradeVerdict(round.state, round.resultUsd)
+        }));
+        const profitUsd = money(summary.rounds.reduce((sum, round) => sum + (round.resultUsd > 0 ? round.resultUsd : 0), 0));
+        const lossUsd = money(summary.rounds.reduce((sum, round) => sum + (round.resultUsd < 0 ? round.resultUsd : 0), 0));
+        return {
+          watching,
+          trades,
+          profitUsd,
+          lossUsd,
+          netUsd: summary.realizedUsd,
+          wins: summary.wins,
+          losses: summary.losses,
+          open: summary.open,
+          verdict: deskVerdict(watching, summary, profitUsd, lossUsd)
+        };
+      }
+      function watchVerdict(row) {
+        if (row.qualified) {
+          return "pripraven\xFD, \u010Fal\u0161\xED m\xF4\u017Ee navrhn\xFA\u0165 50 USD";
+        }
+        if (row.classified >= LIMITS.minTraderSamples) {
+          return "m\xE1 30, \u010Fal\u0161\xED \u010Dak\xE1 na \u010Derstv\xFD obchod";
+        }
+        if (row.reason === "hist\xF3ria vy\u010Derpan\xE1 pred 30") {
+          return "hist\xF3ria nesta\u010Dila, \u010Fal\u0161\xED ho nekop\xEDruje";
+        }
+        return "sledujeme, \u010Fal\u0161\xED vyhodnot\xED pri 30";
+      }
+      function tradeVerdict(state, resultUsd) {
+        if (state === "otvoren\xFD") {
+          return "otvoren\xFD, \u010Fal\u0161\xED vyhodnot\xED po uzavret\xED";
+        }
+        if (resultUsd == null) {
+          return "bez ceny, \u010Fal\u0161\xED \u010Dak\xE1 na cenu";
+        }
+        if (resultUsd > 0) {
+          return "zisk, \u010Fal\u0161\xED ho dr\u017E\xED v sledovan\xED";
+        }
+        if (resultUsd < 0) {
+          return "strata, \u010Fal\u0161\xED berie stop ako platn\xFD";
+        }
+        return "nula, \u010Fal\u0161\xED ho nech\xE1va v rebr\xED\u010Dku";
+      }
+      function deskVerdict(watched, summary, profitUsd, lossUsd) {
+        if (watched.length === 0 && summary.closed === 0 && summary.open === 0) {
+          return "Rebr\xED\u010Dek je pr\xE1zdny. \u010Eal\u0161\xED vyhodnot\xED prv\xFD \u010Dist\xFD obchod.";
+        }
+        const lead = watched[0] ? ` Vedie ${watched[0].classified}/${watched[0].need}.` : "";
+        return `Sledujeme ${walletCountLabel(watched.length)}.${lead} Zisk ${plainUsd(profitUsd)} USD, strata ${plainUsd(Math.abs(lossUsd))} USD, \u010Dist\xFD ${plainUsd(summary.realizedUsd)} USD. \u010Eal\u0161\xED vyhodnocuje ka\u017Ed\xFD uzavret\xFD paper obchod.`;
+      }
+      function walletCountLabel(count) {
+        if (count === 1) {
+          return "1 pe\u0148a\u017Eenku";
+        }
+        if (count >= 2 && count <= 4) {
+          return `${count} pe\u0148a\u017Eenky`;
+        }
+        return `${count} pe\u0148a\u017Eeniek`;
+      }
+      function money(value) {
+        return Math.round(value * 100) / 100;
+      }
+      function plainUsd(value) {
+        const number = Number.isFinite(value) ? value : 0;
+        return Number.isInteger(number) ? String(number) : String(Math.round(number * 100) / 100);
+      }
       function ordersOnDay(orders, day) {
         return (Array.isArray(orders) ? orders : []).filter((item) => item && item.side !== "stop" && utcDay(item.recordedAt) === day).length;
       }
@@ -1051,6 +1139,7 @@ var EliteEngine = (() => {
         readTarget,
         ordersOnDay,
         summarizePaper,
+        evaluateBook,
         runCycle
       };
     }
@@ -1062,7 +1151,7 @@ var EliteEngine = (() => {
       var { PUMP_PROGRAM_ID } = require_config();
       var { discoverRecentWallets } = require_discover();
       var { parseHeliusKey, RPC_KEY } = require_helius_key();
-      var { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder } = require_cycle();
+      var { LIMITS, emptyLedger, evaluateBook, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder } = require_cycle();
       var POLL_CREDITS = 31;
       var USABLE_CREDITS = 95e4;
       var MONTH_MS = 30 * 24 * 60 * 60 * 1e3;
@@ -1077,6 +1166,7 @@ var EliteEngine = (() => {
         { id: "ceo", name: "CEO", detail: "N\xE1vrh posunie \u010Falej. Limity nezmen\xED a veto neprep\xED\u0161e." },
         { id: "risk", name: "Risk governor", detail: "Pust\xED paper pr\xEDkaz za 50 USD len na pripojen\xFA verejn\xFA adresu, do 3 poz\xEDci\xED a 10 pr\xEDkazov za de\u0148. Stop je 15 % pod vstupom. Live odoslanie nie je zapnut\xE9." },
         { id: "executor", name: "Executor", detail: "Zap\xED\u0161e paper pr\xEDkaz na na\u0161u verejn\xFA adresu. Na sie\u0165 ni\u010D neposiela." },
+        { id: "evaluator", name: "Vyhodnotenie", detail: "Pozrie, koho sledujeme, ktor\xE9 transakcie prebehli a \u010Di je to zisk alebo strata." },
         { id: "notifier", name: "Hl\xE1senie", detail: "Samostatn\xFD riadok na tejto ploche. Telef\xF3n sa zapoj\xED a\u017E po zvolen\xED kan\xE1la." },
         { id: "wallet", name: "Phantom", detail: "Ost\xE1va odpojen\xE1. Live podpis nie je v tomto behu." }
       ]);
@@ -1521,9 +1611,45 @@ var EliteEngine = (() => {
             ageSec: row.ageSec,
             qualified: row.qualified,
             stakeUsd: row.stakeUsd,
-            reason: row.reason
+            reason: row.reason,
+            lastSignature: shortId(row.lastSignature)
           })),
-          summary: summarizePaper(ledger)
+          summary: summarizePaper(ledger),
+          review: publicReview(evaluateBook(ledger, Math.floor(Date.now() / 1e3)))
+        };
+      }
+      function publicReview(review) {
+        return {
+          verdict: review.verdict,
+          profitUsd: review.profitUsd,
+          lossUsd: review.lossUsd,
+          netUsd: review.netUsd,
+          wins: review.wins,
+          losses: review.losses,
+          open: review.open,
+          watching: review.watching.map((row) => ({
+            rank: row.rank,
+            address: shortId(row.address),
+            classified: row.classified,
+            need: row.need,
+            side: row.side,
+            mint: shortId(row.mint),
+            lastSignature: shortId(row.lastSignature),
+            stakeUsd: row.stakeUsd,
+            verdict: row.verdict
+          })),
+          trades: review.trades.map((trade) => ({
+            side: trade.side,
+            state: trade.state,
+            source: shortId(trade.source),
+            mint: shortId(trade.mint),
+            stakeUsd: trade.stakeUsd,
+            entryPrice: trade.entryPrice,
+            exitPrice: trade.exitPrice,
+            resultBps: trade.resultBps,
+            resultUsd: trade.resultUsd,
+            verdict: trade.verdict
+          }))
         };
       }
       function roleState(id, running, halted, wallet) {

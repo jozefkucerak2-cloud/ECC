@@ -164,8 +164,8 @@
     .count { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 500; font-size: 13px; }
     .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
     .metrics.wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    #pnl.up { color: var(--moss); }
-    #pnl.down { color: var(--clay); }
+    #pnl.up, #sum-profit.up { color: var(--moss); }
+    #pnl.down, #sum-loss.down { color: var(--clay); }
     .metric { padding: 12px; border-radius: 14px; background: var(--panel-2); }
     .metric small { display: block; color: var(--faint); font-size: 12px; }
     .metric b { display: block; margin-top: 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
@@ -294,20 +294,22 @@
       <section class="card" id="card-summary">
         <div class="block-head"><p>Paper 50 USD</p><p class="count" id="pnl-count">0 ziskov · 0 strát · 0 otvorených</p></div>
         <div class="metrics wide">
-          <div class="metric"><small>Výsledok</small><b id="pnl">0,0 %</b></div>
+          <div class="metric"><small>Čistý</small><b id="pnl">0,00 USD</b></div>
+          <div class="metric"><small>Zisk</small><b id="sum-profit">0,00 USD</b></div>
+          <div class="metric"><small>Strata</small><b id="sum-loss">0,00 USD</b></div>
           <div class="metric"><small>Otvorené</small><b id="sum-open">0</b></div>
-          <div class="metric"><small>Zatvorené</small><b id="sum-closed">0</b></div>
-          <div class="metric"><small>Posledné kolo</small><b id="decision">bez príkazu</b></div>
         </div>
-        <p class="empty" id="rounds-empty">Stávka jedného paper obchodu je 50 USD. Prvý zápis príde po 30 čistých obchodoch a čerstvom signáli.</p>
+        <p class="fine" id="review-verdict">Ďalší vyhodnotí prvý čistý obchod.</p>
+        <div class="block-head" style="margin-top:18px"><p>Transakcie</p><p class="count" id="trade-count">0</p></div>
+        <p class="empty" id="rounds-empty">Zatiaľ žiadna transakcia. Prvá vznikne po 30 čistých obchodoch sledovanej peňaženky.</p>
         <ul class="rows" id="rounds"></ul>
         <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
         <p class="fine" id="live-gate">Live odoslanie nie je zapnuté. Kniha ostáva paper a jeden príkaz je 50 USD.</p>
       </section>
       <section class="board">
         <article class="card" id="card-run">
-          <div class="block-head"><p>Rebríček agentov</p><p class="count" id="ladder-count">0 / 30</p></div>
-          <p class="empty" id="ladder-empty">Agenti ešte nemajú čistý obchod. Rebríček sa skladá z načítanej reťaze a paper 50 USD vznikne až pri 30.</p>
+          <div class="block-head"><p>Koho sledujeme</p><p class="count" id="ladder-count">0 / 30</p></div>
+          <p class="empty" id="ladder-empty">Zatiaľ nikoho. Rebríček sa skladá z načítanej reťaze a ďalší ho vyhodnotí pri 30 čistých obchodoch.</p>
           <ul class="rows" id="ladder"></ul>
         </article>
         <article class="card">
@@ -339,6 +341,7 @@
             <li><strong>CEO</strong><span class="tag">pripravený</span><span class="detail">Limity nemení a veto neprepíše.</span></li>
             <li><strong>Risk governor</strong><span class="tag">pripravený</span><span class="detail">Najviac 3 pozície a 10 príkazov za deň. Stop je 15 %.</span></li>
             <li><strong>Executor</strong><span class="tag">pripravený</span><span class="detail">Zapíše paper príkaz. Na sieť nič neposiela.</span></li>
+            <li><strong>Vyhodnotenie</strong><span class="tag">pripravený</span><span class="detail">Pozrie, koho sledujeme, ktoré transakcie prebehli a či je to zisk alebo strata.</span></li>
             <li><strong>Hlásenie</strong><span class="tag">pripravený</span><span class="detail">Riadok na tejto ploche. Telefón nie je zapojený.</span></li>
             <li><strong>Phantom</strong><span class="tag">nepripojená</span><span class="detail">Live podpis v tomto behu nie je.</span></li>
           </ol>
@@ -385,9 +388,10 @@
       return text.length <= 12 ? (text || '—') : text.slice(0, 4) + '…' + text.slice(-4);
     }
 
-    function roundLabel(state) {
-      if (state === 'stop') return 'stop';
-      if (state === 'sell') return 'predaj';
+    function tradeLabel(side) {
+      if (side === 'stop') return 'stop';
+      if (side === 'sell') return 'predaj';
+      if (side === 'buy') return 'nákup';
       return 'otvorený';
     }
 
@@ -515,7 +519,8 @@
       document.getElementById('book-empty').hidden = (book.openPositions || 0) + (book.ordersTotal || 0) > 0;
       const ladder = document.getElementById('ladder');
       ladder.replaceChildren();
-      const rows = book.ladder || [];
+      const review = book.review || {};
+      const rows = Array.isArray(review.watching) && review.watching.length > 0 ? review.watching : (book.ladder || []);
       const best = rows[0] ? rows[0].classified : 0;
       const need = limits.minTraderSamples || 30;
       text('ladder-count', best + ' / ' + need);
@@ -525,7 +530,7 @@
         const name = document.createElement('strong');
         name.textContent = (row.rank || '') + ' · ' + row.address;
         const meta = document.createElement('span');
-        meta.textContent = (row.reason || 'vzorka') + ' · ' + (row.side || '—') + ' · ' + row.classified + '/' + row.need;
+        meta.textContent = (row.verdict || row.reason || 'vzorka') + ' · posledná ' + (row.side || '—') + ' ' + shortText(row.mint) + ' · ' + shortText(row.lastSignature) + ' · ' + row.classified + '/' + row.need;
         const bar = document.createElement('div');
         bar.className = 'lane';
         const fill = document.createElement('span');
@@ -545,27 +550,37 @@
       text('notice', data.notice || 'Bez nového paper zápisu. Telefón nie je zapojený.');
       text('decision', data.decision || 'bez príkazu');
       const summary = book.summary || {};
-      const bps = Number.isFinite(summary.realizedBps) ? summary.realizedBps : 0;
+      const netUsd = Number.isFinite(review.netUsd) ? review.netUsd : (Number.isFinite(summary.realizedUsd) ? summary.realizedUsd : 0);
+      const profitUsd = Number.isFinite(review.profitUsd) ? review.profitUsd : 0;
+      const lossUsd = Number.isFinite(review.lossUsd) ? review.lossUsd : 0;
       const pnl = document.getElementById('pnl');
-      pnl.textContent = formatBps(bps) + ' · ' + formatUsd(summary.realizedUsd);
-      pnl.classList.toggle('up', bps > 0);
-      pnl.classList.toggle('down', bps < 0);
-      text('sum-open', String(summary.open || 0));
-      text('sum-closed', String(summary.closed || 0));
-      text('pnl-count', (summary.wins || 0) + ' ziskov · ' + (summary.losses || 0) + ' strát · ' + (summary.open || 0) + ' otvorených');
+      pnl.textContent = formatUsd(netUsd);
+      pnl.classList.toggle('up', netUsd > 0);
+      pnl.classList.toggle('down', netUsd < 0);
+      const profit = document.getElementById('sum-profit');
+      const loss = document.getElementById('sum-loss');
+      profit.textContent = formatUsd(profitUsd);
+      loss.textContent = formatUsd(lossUsd);
+      profit.classList.toggle('up', profitUsd > 0);
+      loss.classList.toggle('down', lossUsd < 0);
+      text('sum-open', String(summary.open || review.open || 0));
+      text('pnl-count', (summary.wins || review.wins || 0) + ' ziskov · ' + (summary.losses || review.losses || 0) + ' strát · ' + (summary.open || review.open || 0) + ' otvorených');
+      text('review-verdict', review.verdict || 'Ďalší vyhodnotí prvý čistý obchod.');
       const rounds = document.getElementById('rounds');
-      const roundRows = Array.isArray(summary.rounds) ? summary.rounds : [];
+      const roundRows = Array.isArray(review.trades) ? review.trades : (Array.isArray(summary.rounds) ? summary.rounds : []);
+      text('trade-count', String(roundRows.length));
       rounds.replaceChildren();
       document.getElementById('rounds-empty').hidden = roundRows.length > 0;
       roundRows.forEach((round) => {
         const item = document.createElement('li');
         const name = document.createElement('strong');
-        name.textContent = shortText(round.mint) + ' · ' + roundLabel(round.state);
+        const state = round.state || round.side;
+        name.textContent = tradeLabel(round.side || state) + ' · ' + shortText(round.mint);
         const meta = document.createElement('span');
-        const result = round.state === 'otvorený'
+        const result = state === 'otvorený'
           ? 'beží · ' + formatUsd(round.stakeUsd == null ? 50 : round.stakeUsd)
           : (round.resultBps == null ? 'bez ceny' : formatBps(round.resultBps) + ' · ' + formatUsd(round.resultUsd));
-        meta.textContent = result + ' · vstup ' + formatPrice(round.entryPrice) + ' · výstup ' + formatPrice(round.exitPrice);
+        meta.textContent = result + ' · ' + (round.verdict || 'ďalší vyhodnotí') + ' · od ' + shortText(round.source) + ' · vstup ' + formatPrice(round.entryPrice) + ' · výstup ' + formatPrice(round.exitPrice);
         item.append(name, meta);
         rounds.append(item);
       });
