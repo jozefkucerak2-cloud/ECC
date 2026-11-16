@@ -6,21 +6,22 @@
   <title>Elite</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #101114;
-      --rail: #16181d;
-      --tile: #1c1f26;
-      --ink: #f4f1ea;
-      --muted: #b4b8c2;
-      --faint: #a3a9b4;
-      --line: rgba(244, 241, 234, 0.1);
-      --paper: #efe6d4;
-      --paper-ink: #1c1a16;
-      --moss: #b7d38a;
-      --clay: #e38b73;
-      --radius: 12px;
+      --bg: #0c0d10;
+      --panel: #15171c;
+      --panel-2: #1c1f26;
+      --ink: #f6f1e7;
+      --muted: #b7b1a6;
+      --faint: #8f897e;
+      --line: rgba(246, 241, 231, 0.12);
+      --cream: #f3ead7;
+      --cream-ink: #1a1712;
+      --moss: #c6dd9a;
+      --moss-ink: #17210f;
+      --clay: #e39a84;
+      --radius: 16px;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); }
@@ -33,160 +34,173 @@
     button { cursor: pointer; }
     button:disabled { opacity: 0.38; cursor: default; }
     button:focus-visible, input:focus-visible, summary:focus-visible {
-      outline: 2px solid var(--paper);
+      outline: 2px solid var(--cream);
       outline-offset: 2px;
     }
-    .app { min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+    .app { min-height: 100vh; }
     header {
       display: flex;
       align-items: center;
       gap: 10px;
       min-height: 64px;
-      padding: 12px 20px;
-      background: #101114;
+      padding: 12px 28px;
       border-bottom: 1px solid var(--line);
-      position: sticky;
-      top: 0;
-      z-index: 2;
     }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; letter-spacing: -0.03em; }
-    .mark { width: 10px; height: 10px; border-radius: 3px; background: var(--paper); }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.03em; }
+    .mark { width: 10px; height: 10px; border-radius: 3px; background: var(--cream); }
     .mode {
-      margin-left: 6px;
       padding: 4px 8px;
       border-radius: 999px;
-      background: var(--paper);
-      color: var(--paper-ink);
+      background: var(--cream);
+      color: var(--cream-ink);
       font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.04em;
+      font-weight: 700;
+      letter-spacing: 0.06em;
     }
-    .mode.kill { background: var(--clay); color: #2a1210; }
+    .mode.kill { background: var(--clay); }
     .chip {
       display: flex;
       align-items: center;
       gap: 8px;
-      min-width: 0;
       padding: 6px 10px;
       border-radius: 999px;
-      background: var(--tile);
+      background: var(--panel);
       color: var(--muted);
       font-size: 12px;
     }
     .chip b { color: var(--ink); font-weight: 600; }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
     .chip.on .dot { background: var(--moss); }
-    .clock { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
-    .body { min-height: 0; display: grid; grid-template-columns: 340px minmax(0, 1fr); }
-    aside, .work { min-height: 0; }
-    aside {
-      padding: 8px 20px 28px;
-      background: var(--rail);
-      border-right: 1px solid var(--line);
+    .clock { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+    main { padding: 22px 28px 48px; display: flex; flex-direction: column; gap: 16px; }
+    .now {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: end;
+      padding: 22px 24px;
+      border-radius: 22px;
+      background: var(--cream);
+      color: var(--cream-ink);
     }
-    .group { padding: 18px 0; border-bottom: 1px solid var(--line); }
-    .group:last-child { border-bottom: 0; }
-    form { display: flex; flex-direction: column; gap: 8px; margin: 0; }
-    .label { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.02em; }
-    .host { margin: 0; color: var(--muted); font-size: 13px; }
-    label { color: var(--faint); font-size: 12px; font-weight: 500; }
-    input {
-      width: 100%;
-      height: 40px;
-      padding: 0 12px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #12141a;
-      outline: none;
-    }
-    input:focus { border-color: rgba(239, 230, 212, 0.55); }
-    .row, .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    button {
-      height: 40px;
-      padding: 0 14px;
-      border-radius: 10px;
-      border: 1px solid var(--line);
-      background: transparent;
-      color: var(--ink);
-    }
-    button.solid { background: var(--paper); color: var(--paper-ink); border-color: var(--paper); font-weight: 600; }
-    button.hot { color: #ffd2c6; border-color: rgba(227, 139, 115, 0.55); }
-    .fine { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-    details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
-    details .stack { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-    code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 12px; color: var(--ink); overflow-wrap: anywhere; }
-    .work { padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 16px; }
-    .stage-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      align-items: center;
+    .eyebrow {
+      margin: 0 0 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
     }
     #status {
       margin: 0;
-      flex: 1;
-      min-height: 40px;
-      display: flex;
-      align-items: center;
-      padding: 10px 14px;
-      border-radius: var(--radius);
-      background: var(--tile);
-      color: var(--ink);
-      font-size: 14px;
+      max-width: 760px;
+      font-family: Newsreader, Georgia, serif;
+      font-size: 32px;
+      font-weight: 560;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
     }
-    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-    .metrics.tight { grid-template-columns: 1fr 1fr; }
-    .metric { padding: 14px 16px; border-radius: var(--radius); background: var(--tile); }
-    .metric small { display: block; color: var(--faint); font-size: 12px; font-weight: 500; }
-    .metric b { display: block; margin-top: 6px; font-weight: 600; font-size: 26px; font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
-    .split { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr); gap: 28px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    button {
+      height: 40px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(26, 23, 18, 0.18);
+      background: transparent;
+    }
+    .now button { color: var(--cream-ink); }
+    button.solid { background: var(--cream-ink); color: var(--cream); border-color: var(--cream-ink); font-weight: 600; }
+    button.hot { color: #6d2418; border-color: rgba(109, 36, 24, 0.45); }
+    .gates { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+    .gates li {
+      min-height: 78px;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid transparent;
+    }
+    .gates li span { display: block; color: var(--faint); font-size: 12px; }
+    .gates li b { display: block; margin-top: 6px; font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
+    .setup { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 12px; }
+    .card {
+      padding: 18px 18px 16px;
+      border-radius: 20px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+    .card.current { border-color: rgba(243, 234, 215, 0.72); }
+    .card.live { border-color: rgba(198, 221, 154, 0.7); }
+    .card-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 12px; }
+    .step {
+      margin: 0;
+      color: var(--faint);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+    }
+    h2 { margin: 4px 0 0; font-size: 18px; letter-spacing: -0.03em; }
+    form { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+    .host, .fine { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    label { display: flex; justify-content: space-between; gap: 8px; color: var(--faint); font-size: 12px; font-weight: 600; }
+    label em { font-style: normal; color: var(--muted); font-weight: 500; }
+    input {
+      width: 100%;
+      height: 42px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #101217;
+      outline: none;
+    }
+    input:focus { border-color: rgba(243, 234, 215, 0.55); }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .card button { color: var(--ink); border-color: var(--line); }
+    .card button.solid { background: var(--cream); color: var(--cream-ink); border-color: var(--cream); }
+    details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+    details .stack { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+    .board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr) minmax(280px, 0.9fr); gap: 12px; }
     .block-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-    .block-head p { margin: 0; color: var(--faint); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
-    .block-head .count { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 500; font-size: 13px; }
+    .block-head p { margin: 0; color: var(--faint); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    .count { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 500; font-size: 13px; }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .metric { padding: 12px; border-radius: 14px; background: var(--panel-2); }
+    .metric small { display: block; color: var(--faint); font-size: 12px; }
+    .metric b { display: block; margin-top: 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
     .rows, .roles { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
     .rows li, .roles li {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 2px 12px;
       padding: 12px 14px;
-      border-radius: var(--radius);
-      background: var(--tile);
-      font-size: 13px;
+      border-radius: 14px;
+      background: var(--panel-2);
     }
     .rows li span, .detail { color: var(--muted); }
-    .detail { grid-column: 1 / -1; line-height: 1.45; }
+    .detail { grid-column: 1 / -1; }
     .tag {
       justify-self: end;
-      align-self: start;
       font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.03em;
+      font-weight: 700;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
       color: var(--faint);
     }
-    .tag.live { color: #17210f; background: var(--moss); padding: 3px 7px; border-radius: 999px; }
-    .empty { margin: 10px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-    .rows li .lane { grid-column: 1 / -1; height: 4px; margin-top: 8px; border-radius: 999px; background: rgba(244, 241, 234, 0.08); overflow: hidden; }
-    .lane span { display: block; height: 100%; background: var(--paper); }
-    .gates { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-    .gates li { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: var(--radius); background: var(--tile); }
-    .gates li span { color: var(--faint); font-size: 12px; }
-    .gates li b { font-weight: 600; font-size: 14px; }
-    #program, .host { overflow-wrap: anywhere; }
-    @media (max-width: 980px) {
-      .body { display: flex; flex-direction: column; }
-      .work { order: -1; }
-      aside { border-right: 0; border-top: 1px solid var(--line); }
-      .split, .metrics, .gates { grid-template-columns: 1fr 1fr; }
-      header { flex-wrap: wrap; align-items: center; }
-      .clock { margin-left: 0; }
-      .stage-head { flex-direction: column; align-items: stretch; }
-      .actions button { flex: 1 1 140px; }
+    .tag.live { color: var(--moss-ink); background: var(--moss); padding: 3px 7px; border-radius: 999px; }
+    .empty { margin: 10px 0 0; color: var(--muted); }
+    .lane { grid-column: 1 / -1; height: 4px; margin-top: 8px; border-radius: 999px; background: rgba(246, 241, 231, 0.08); overflow: hidden; }
+    .lane span { display: block; height: 100%; background: var(--cream); }
+    #program { overflow-wrap: anywhere; }
+    @media (max-width: 1100px) {
+      .setup, .board, .gates { grid-template-columns: 1fr 1fr; }
+      .now { grid-template-columns: 1fr; }
+      .actions { justify-content: flex-start; }
     }
-    @media (max-width: 640px) {
-      .metrics, .split, .gates { grid-template-columns: 1fr; }
-      .work { padding: 16px; }
-      aside { padding-left: 16px; padding-right: 16px; }
+    @media (max-width: 720px) {
+      header, main { padding-left: 16px; padding-right: 16px; }
+      header { flex-wrap: wrap; }
+      .clock { margin-left: 0; }
+      .setup, .board, .gates, .metrics { grid-template-columns: 1fr; }
+      #status { font-size: 26px; }
     }
     @media (prefers-reduced-motion: reduce) {
       * { scroll-behavior: auto; transition: none; }
@@ -198,24 +212,48 @@
     <header>
       <div class="brand"><span class="mark" aria-hidden="true"></span>Elite</div>
       <div class="mode" id="mode">PAPER</div>
-      <div class="chip" id="rpc-pill"><span class="dot" aria-hidden="true"></span>RPC <b id="rpc-state">nepripojené</b></div>
-      <div class="chip" id="wallet-pill"><span class="dot" aria-hidden="true"></span>Peňaženka <b id="wallet-state">nepripojená</b></div>
+      <div class="chip" id="rpc-pill"><span class="dot" aria-hidden="true"></span>Helius <b id="rpc-state">nepripojené</b></div>
+      <div class="chip" id="wallet-pill"><span class="dot" aria-hidden="true"></span>Adresa <b id="wallet-state">nepripojená</b></div>
       <div class="clock" id="clock"></div>
     </header>
-    <div class="body">
-      <aside>
-        <div class="group">
-          <form id="rpc-form">
-            <p class="label">Helius RPC</p>
+    <main>
+      <section class="now">
+        <div>
+          <p class="eyebrow">Teraz</p>
+          <p id="status" aria-live="polite">Kontrolujem, či beží lokálny proces.</p>
+        </div>
+        <div class="actions">
+          <button class="solid" id="start" type="button">Spustiť paper</button>
+          <button id="stop" type="button">Pauza</button>
+          <button class="hot" id="kill" type="button">Kill</button>
+          <button id="release" type="button">Uvoľniť kill</button>
+        </div>
+      </section>
+      <ul class="gates" id="gates">
+        <li><span>01 · Kde beží</span><b id="gate-local">kontrolujem</b></li>
+        <li><span>02 · Helius</span><b id="gate-rpc">kontrolujem</b></li>
+        <li><span>03 · Slučka</span><b id="gate-loop">kontrolujem</b></li>
+        <li><span>04 · Vzorka</span><b id="gate-sample">kontrolujem</b></li>
+        <li><span>05 · Sieť</span><b id="gate-send">nič sa neposiela</b></li>
+      </ul>
+      <section class="setup">
+        <article class="card current" id="card-helius">
+          <div class="card-head">
+            <div>
+              <p class="step">KROK 1</p>
+              <h2>Helius kľúč</h2>
+            </div>
             <p class="host" id="endpoint">mainnet.helius-rpc.com</p>
-            <label for="key1">Kľúč 1</label>
-            <input id="key1" name="key1" type="password" autocomplete="off" spellcheck="false">
-            <label for="key2">Kľúč 2</label>
+          </div>
+          <form id="rpc-form">
+            <label for="key1">Kľúč 1 <em id="slot1">prázdny</em></label>
+            <input id="key1" name="key1" type="password" autocomplete="off" spellcheck="false" placeholder="kľúč alebo celá Helius adresa">
+            <label for="key2">Kľúč 2 <em id="slot2">prázdny</em></label>
             <input id="key2" name="key2" type="password" autocomplete="off" spellcheck="false">
-            <label for="key3">Kľúč 3</label>
+            <label for="key3">Kľúč 3 <em id="slot3">prázdny</em></label>
             <input id="key3" name="key3" type="password" autocomplete="off" spellcheck="false">
             <details>
-              <summary>ID projektov</summary>
+              <summary>ID projektov, voliteľné</summary>
               <div class="stack">
                 <label for="project1">ID projektu 1</label>
                 <input id="project1" name="project1" autocomplete="off" spellcheck="false">
@@ -226,112 +264,127 @@
               </div>
             </details>
             <div class="row">
-              <button class="solid" id="save-rpc" type="submit">Pripojiť RPC</button>
+              <button class="solid" id="save-rpc" type="submit">Uložiť kľúč</button>
             </div>
-            <p class="fine">Vlož Helius kľúč alebo celú adresu mainnet.helius-rpc.com. Kľúč sa do stavu nevracia a súkromný kľúč peňaženky sa odmieta.</p>
+            <p class="fine" id="saved-keys">Zatiaľ žiadny kľúč. Po uložení pole ostane prázdne a kľúč sa na ploche neukáže.</p>
           </form>
-        </div>
-        <div class="group">
+        </article>
+        <article class="card" id="card-wallet">
+          <div class="card-head">
+            <div>
+              <p class="step">KROK 2</p>
+              <h2>Verejná adresa</h2>
+            </div>
+          </div>
           <form id="wallet-form">
-            <p class="label">Phantom</p>
+            <label for="address">Adresa, ktorej patria paper príkazy</label>
+            <input id="address" name="address" autocomplete="off" spellcheck="false" placeholder="vlož verejnú adresu">
             <div class="row">
-              <button class="solid" id="phantom" type="button">Pripojiť Phantom</button>
+              <button class="solid" id="save-wallet" type="submit">Uložiť adresu</button>
+              <button id="phantom" type="button">Phantom</button>
               <button id="disconnect" type="button">Odpojiť</button>
             </div>
-            <label for="address">Verejná adresa</label>
-            <input id="address" name="address" autocomplete="off" spellcheck="false" placeholder="verejná adresa">
-            <div class="row">
-              <button id="save-wallet" type="submit">Uložiť adresu</button>
-            </div>
-            <p class="fine">Pripája sa len verejná adresa. Podpis a odoslanie transakcie tu nie sú.</p>
+            <p class="fine" id="saved-wallet">Zatiaľ žiadna adresa. Súkromný kľúč sa neprijíma a Phantom nič nepodpisuje.</p>
           </form>
-        </div>
-        <div class="group">
-          <p class="label">Lokálny proces</p>
-          <p class="fine"><code>node chain-reader/src/serve.js</code><br><code>http://127.0.0.1:8787</code><br>Nočný beh je tento proces na stroji, ktorý nespí. Hostená karta po zatvorení prestane.</p>
-        </div>
-      </aside>
-      <section class="work">
-        <div class="stage-head">
-          <p id="status">Kontrolujem lokálny proces.</p>
-          <div class="actions">
-            <button class="solid" id="start" type="button">Spustiť paper</button>
-            <button id="stop" type="button">Pauza</button>
-            <button class="hot" id="kill" type="button">Kill</button>
-            <button id="release" type="button">Uvoľniť kill</button>
-          </div>
-        </div>
-        <div class="metrics">
-          <div class="metric"><small>Čistá vzorka</small><b id="lim-sample">30</b></div>
-          <div class="metric"><small>Sviežosť</small><b id="lim-age">60 s</b></div>
-          <div class="metric"><small>Pozície</small><b id="lim-pos">0 / 3</b></div>
-          <div class="metric"><small>Príkazy dnes</small><b id="lim-day">0 / 10</b></div>
-        </div>
-        <ul class="gates" id="gates">
-          <li><span>Lokálny proces</span><b id="gate-local">kontrolujem</b></li>
-          <li><span>Helius</span><b id="gate-rpc">kontrolujem</b></li>
-          <li><span>Paper slučka</span><b id="gate-loop">kontrolujem</b></li>
-          <li><span>Čistá vzorka</span><b id="gate-sample">kontrolujem</b></li>
-          <li><span>Odoslanie transakcie</span><b id="gate-send">nie je v tomto behu</b></li>
-        </ul>
-        <div>
-          <div class="block-head"><p>Rebríček</p><p class="count" id="ladder-count">0 / 30</p></div>
-          <p class="empty" id="ladder-empty">Žiadny čistý obchod. Rebríček sa plní z načítanej reťaze, návrh až pri 30.</p>
-          <ul class="rows" id="ladder"></ul>
-        </div>
-        <div class="split">
-          <div>
-            <div class="block-head"><p>Kniha</p><p class="count" id="book-count">0 pozícií</p></div>
-            <p class="empty" id="book-empty">Žiadna paper pozícia. Zápis príde až po 30 čistých obchodoch jednej peňaženky.</p>
-            <ul class="rows" id="positions"></ul>
-            <ul class="rows" id="orders"></ul>
-            <div class="block-head" style="margin-top:22px"><p>Posledné kolo</p><p class="count" id="decision">bez príkazu</p></div>
-            <div class="metrics tight">
-              <div class="metric"><small>Vzorka</small><b id="sample">čaká</b></div>
-              <div class="metric"><small>Peňaženky</small><b id="wallets">0</b></div>
-              <div class="metric"><small>Podpisy</small><b id="fetched">0</b></div>
-              <div class="metric"><small>Kredity</small><b id="credits">čaká</b></div>
-            </div>
-            <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
-            <p class="fine" id="program">Program pump 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P.</p>
-          </div>
-          <div>
-            <div class="block-head"><p>Tím</p><p class="count" id="key-count">0 / 3 kľúčov</p></div>
-            <ol class="roles" id="roles">
-              <li><strong>Čítač</strong><span class="tag">pripravený</span><span class="detail">Najprv špička programu, potom vlastné podpisy peňaženky, ktorá ešte nemá 30 čistých obchodov. Jedno kolo má strop 31 volaní.</span></li>
-              <li><strong>Analytik</strong><span class="tag">pripravený</span><span class="detail">Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.</span></li>
-              <li><strong>Skeptik</strong><span class="tag">pripravený</span><span class="detail">Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.</span></li>
-              <li><strong>CEO</strong><span class="tag">pripravený</span><span class="detail">Návrh posunie ďalej. Limity nezmení a veto neprepíše.</span></li>
-              <li><strong>Risk governor</strong><span class="tag">pripravený</span><span class="detail">Pustí príkaz len na pripojenú verejnú adresu, do 3 pozícií a 10 príkazov za deň. Stop je 15 % pod vstupom.</span></li>
-              <li><strong>Executor</strong><span class="tag">pripravený</span><span class="detail">Zapíše paper príkaz na našu verejnú adresu. Na sieť nič neposiela.</span></li>
-              <li><strong>Hlásenie</strong><span class="tag">pripravený</span><span class="detail">Samostatný riadok na tejto ploche. Telefón sa zapojí až po zvolení kanála.</span></li>
-              <li><strong>Phantom</strong><span class="tag">nepripojená</span><span class="detail">Ostáva odpojená. Live podpis nie je v tomto behu.</span></li>
-            </ol>
-          </div>
-        </div>
+        </article>
       </section>
-    </div>
+      <section class="board">
+        <article class="card" id="card-run">
+          <div class="block-head"><p>Rebríček</p><p class="count" id="ladder-count">0 / 30</p></div>
+          <p class="empty" id="ladder-empty">Čítač ešte nemá čistý obchod. Návrh vznikne až pri 30 obchodoch jednej peňaženky.</p>
+          <ul class="rows" id="ladder"></ul>
+        </article>
+        <article class="card">
+          <div class="block-head"><p>Kniha</p><p class="count" id="book-count">0 pozícií</p></div>
+          <div class="metrics">
+            <div class="metric"><small>Vzorka</small><b id="lim-sample">30</b></div>
+            <div class="metric"><small>Sviežosť</small><b id="lim-age">60 s</b></div>
+            <div class="metric"><small>Pozície</small><b id="lim-pos">0 / 3</b></div>
+            <div class="metric"><small>Dnes</small><b id="lim-day">0 / 10</b></div>
+          </div>
+          <p class="empty" id="book-empty">Žiadna paper pozícia.</p>
+          <ul class="rows" id="positions"></ul>
+          <ul class="rows" id="orders"></ul>
+          <div class="block-head" style="margin-top:18px"><p>Posledné kolo</p><p class="count" id="decision">bez príkazu</p></div>
+          <div class="metrics">
+            <div class="metric"><small>Vzorka</small><b id="sample">čaká</b></div>
+            <div class="metric"><small>Peňaženky</small><b id="wallets">0</b></div>
+            <div class="metric"><small>Podpisy</small><b id="fetched">0</b></div>
+            <div class="metric"><small>Kredity</small><b id="credits">čaká</b></div>
+          </div>
+          <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
+          <p class="fine" id="program">Program pump 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P.</p>
+        </article>
+        <article class="card">
+          <div class="block-head"><p>Tím</p><p class="count" id="key-count">0 / 3 kľúčov</p></div>
+          <ol class="roles" id="roles">
+            <li><strong>Čítač</strong><span class="tag">pripravený</span><span class="detail">Číta len s pripojenou verejnou adresou.</span></li>
+            <li><strong>Analytik</strong><span class="tag">pripravený</span><span class="detail">Návrh vznikne až pri 30 čistých obchodoch.</span></li>
+            <li><strong>Skeptik</strong><span class="tag">pripravený</span><span class="detail">Zamietne vzorku pod 30 a udalosť staršiu ako 60 sekúnd.</span></li>
+            <li><strong>CEO</strong><span class="tag">pripravený</span><span class="detail">Limity nemení a veto neprepíše.</span></li>
+            <li><strong>Risk governor</strong><span class="tag">pripravený</span><span class="detail">Najviac 3 pozície a 10 príkazov za deň. Stop je 15 %.</span></li>
+            <li><strong>Executor</strong><span class="tag">pripravený</span><span class="detail">Zapíše paper príkaz. Na sieť nič neposiela.</span></li>
+            <li><strong>Hlásenie</strong><span class="tag">pripravený</span><span class="detail">Riadok na tejto ploche. Telefón nie je zapojený.</span></li>
+            <li><strong>Phantom</strong><span class="tag">nepripojená</span><span class="detail">Live podpis v tomto behu nie je.</span></li>
+          </ol>
+        </article>
+      </section>
+      <p class="fine">Nočný beh je lokálny proces: <code>node chain-reader/src/serve.js</code> a potom <code>http://127.0.0.1:8787</code>. Karta v prehliadači po zatvorení prestane. Na sieť sa nič neposiela.</p>
+    </main>
   </div>
   <script src="/engine.js"></script>
   <script>
-    const status = document.getElementById('status');
     const roles = document.getElementById('roles');
     const start = document.getElementById('start');
     const stop = document.getElementById('stop');
-    const kill = document.getElementById('kill');
     let online = false;
+    let serverKnown = false;
     let localNote = '';
     let noteUntil = 0;
     let browser = null;
+    let boot = null;
 
     function text(id, value) {
-      document.getElementById(id).textContent = value;
+      const node = document.getElementById(id);
+      if (node) node.textContent = value;
     }
 
     function clearRpc() {
       ['key1', 'key2', 'key3', 'project1', 'project2', 'project3'].forEach((id) => {
         document.getElementById(id).value = '';
       });
+    }
+
+    function pageStorage() {
+      try {
+        const probe = 'elite-desk-probe';
+        localStorage.setItem(probe, '1');
+        localStorage.removeItem(probe);
+        return localStorage;
+      } catch {
+        const memory = new Map();
+        return {
+          getItem: (key) => memory.get(key) || null,
+          setItem: (key, value) => memory.set(key, value),
+        };
+      }
+    }
+
+    function armBrowser() {
+      if (browser) return true;
+      if (!globalThis.EliteEngine) return false;
+      browser = EliteEngine.createBrowserDesk({
+        storage: pageStorage(),
+        onUpdate(snapshot) { paint(snapshot); },
+      });
+      paint(browser.snapshot());
+      return true;
+    }
+
+    function browserHoldsWork() {
+      if (!browser) return false;
+      const snap = browser.snapshot();
+      return Boolean(snap.running || snap.wallet || (snap.keys || []).some(Boolean));
     }
 
     function paint(data) {
@@ -341,12 +394,22 @@
       text('rpc-state', connected ? connected + ' / 3' : 'nepripojené');
       document.getElementById('rpc-pill').classList.toggle('on', connected > 0);
       text('key-count', connected + ' / 3 kľúčov');
+      [0, 1, 2].forEach((index) => text('slot' + (index + 1), keys[index] ? 'uložený' : 'prázdny'));
+      text('saved-keys', connected
+        ? 'Uložené ' + connected + ' z 3. Polia ostávajú prázdne, kľúč sa na ploche neukazuje.'
+        : 'Zatiaľ žiadny kľúč. Po uložení pole ostane prázdne a kľúč sa na ploche neukáže.');
       text('wallet-state', data.wallet ? data.wallet.slice(0, 4) + '…' + data.wallet.slice(-4) : 'nepripojená');
       document.getElementById('wallet-pill').classList.toggle('on', Boolean(data.wallet));
+      text('saved-wallet', data.wallet
+        ? data.wallet + ' · paper príkazy patria len tejto adrese.'
+        : 'Zatiaľ žiadna adresa. Súkromný kľúč sa neprijíma a Phantom nič nepodpisuje.');
       const mode = document.getElementById('mode');
       mode.textContent = data.halted ? 'PAPER · KILL' : 'PAPER';
       mode.classList.toggle('kill', Boolean(data.halted));
       text('endpoint', data.endpoint || 'mainnet.helius-rpc.com');
+      document.getElementById('card-helius').classList.toggle('current', connected === 0);
+      document.getElementById('card-wallet').classList.toggle('current', connected > 0 && !data.wallet);
+      document.getElementById('card-run').classList.toggle('live', Boolean(data.running));
       roles.replaceChildren();
       (data.roles || []).forEach((role) => {
         const item = document.createElement('li');
@@ -405,8 +468,7 @@
         const bar = document.createElement('div');
         bar.className = 'lane';
         const fill = document.createElement('span');
-        const rowNeed = row.need || 30;
-        fill.style.width = Math.min(100, Math.round((row.classified / rowNeed) * 100)) + '%';
+        fill.style.width = Math.min(100, Math.round((row.classified / (row.need || 30)) * 100)) + '%';
         bar.append(fill);
         item.append(name, meta, bar);
         ladder.append(item);
@@ -427,84 +489,90 @@
       } else if (config.error) {
         text('program', config.error);
       }
-      text('gate-local', 'toto okno');
+      text('gate-local', browser ? 'toto okno' : 'lokálny proces');
       text('gate-rpc', connected ? connected + ' / 3 kľúčov' : 'chýba kľúč');
       text('gate-loop', data.running ? 'beží' : (data.halted ? 'kill drží pozície' : 'stojí'));
       text('gate-sample', best + ' / ' + need);
-      text('gate-send', 'nie je v tomto behu');
+      text('gate-send', 'nič sa neposiela');
       if (data.error && !(localNote && Date.now() < noteUntil)) {
         localNote = '';
         text('status', data.error);
-      } else if (localNote) {
+      } else if (localNote && Date.now() < noteUntil) {
         text('status', localNote);
       } else if (data.running && !data.wallet) {
-        text('status', 'Čítanie čaká na verejnú adresu. Bez nej sa reťaz nevolá.');
+        text('status', 'Slučka beží a čaká na verejnú adresu. Bez nej sa reťaz nevolá.');
       } else if (data.running && data.localLoop) {
-        text('status', 'Paper číta v tomto okne. Nočný beh je lokálny proces na stroji, ktorý nespí. Zavretie karty slučku zastaví. Na sieť sa nič neposiela.');
+        text('status', 'Paper číta v tomto okne. Zavretie karty slučku zastaví. Na sieť sa nič neposiela.');
       } else if (data.running) {
         text('status', 'Paper číta reťaz. Na sieť sa nič neposiela.');
       } else if (data.halted) {
-        text('status', 'Kill drží pozície. Uvoľniť kill ich nezatvára a na sieť nič nepošle.');
-      } else if (connected) {
-        text('status', 'RPC je pripojené. Spustiť paper spustí čítanie.');
+        text('status', 'Kill drží otvorené pozície. Uvoľnenie ich nezatvára.');
+      } else if (!connected) {
+        text('status', 'Vlož Helius kľúč v kroku 1 a ulož ho.');
+      } else if (!data.wallet) {
+        text('status', 'Kľúč je uložený. V kroku 2 vlož verejnú adresu, potom spusti paper.');
       } else {
-        text('status', 'Vlož Helius kľúč vľavo. Peňaženku pripoj cez Phantom alebo verejnú adresu.');
+        text('status', 'Kľúč aj adresa sú uložené. Spustiť paper začne čítanie.');
       }
       start.disabled = Boolean(data.running);
       stop.disabled = !data.running;
-      kill.disabled = false;
+      document.getElementById('kill').disabled = false;
       document.getElementById('release').disabled = !data.halted;
       document.getElementById('save-rpc').disabled = Boolean(data.running);
     }
 
-    function offline() {
+    function missingEngine() {
       online = false;
-      text('status', 'Toto okno nie je lokálny proces. RPC sa pripája až na http://127.0.0.1:8787.');
-      text('gate-local', 'toto okno nie je lokálny proces');
+      serverKnown = false;
+      text('status', 'Lokálny proces neodpovedá a motor stránky sa nenačítal. Spusti node chain-reader/src/serve.js a otvor http://127.0.0.1:8787.');
+      text('gate-local', 'chýba proces');
       text('gate-rpc', 'nedostupné');
       text('gate-loop', 'nedostupné');
       text('gate-sample', 'nedostupné');
-      text('gate-send', 'nie je v tomto behu');
-      start.disabled = true;
-      stop.disabled = true;
-      kill.disabled = true;
-      document.getElementById('release').disabled = true;
-      document.getElementById('save-rpc').disabled = true;
+      text('gate-send', 'nič sa neposiela');
     }
 
-    function useBrowser() {
-      if (!globalThis.EliteEngine) {
-        throw new Error('engine');
-      }
-      if (!browser) {
-        browser = EliteEngine.createBrowserDesk({
-          onUpdate(snapshot) {
-            paint(snapshot);
-          },
-        });
-      }
-      paint(browser.snapshot());
+    async function readStatus() {
+      const response = await fetch('/api/status', { headers: { accept: 'application/json' } });
+      const type = response.headers.get('content-type') || '';
+      if (!response.ok || !type.includes('application/json')) throw new Error('status');
+      const data = await response.json();
+      if (!data || data.mode !== 'paper' || !Array.isArray(data.roles)) throw new Error('status');
+      return data;
     }
 
     async function refresh() {
-      const response = await fetch('/api/status', { headers: { accept: 'application/json' } });
-      const type = response.headers.get('content-type') || '';
-      if (!response.ok || !type.includes('application/json')) {
-        throw new Error('status');
+      try {
+        const data = await readStatus();
+        serverKnown = true;
+        if (browserHoldsWork()) return;
+        if (browser) {
+          browser.halt();
+          browser = null;
+        }
+        paint(data);
+      } catch {
+        serverKnown = false;
+        if (!browser && !armBrowser()) missingEngine();
       }
-      if (browser) {
-        browser.halt();
-        browser = null;
-      }
-      paint(await response.json());
+    }
+
+    function ready() {
+      if (!boot) boot = refresh();
+      return boot;
     }
 
     async function postJson(path, body) {
+      await ready();
       if (browser) {
         const payload = await browser.handle(path, body || {});
         localNote = '';
         paint(payload);
-        return;
+        return payload;
+      }
+      if (!serverKnown) {
+        missingEngine();
+        throw new Error('Lokálny proces neodpovedá.');
       }
       const response = await fetch(path, {
         method: 'POST',
@@ -515,14 +583,17 @@
       if (!response.ok) throw new Error(payload.error || 'požiadavka zlyhala');
       localNote = '';
       paint(payload);
+      return payload;
+    }
+
+    function note(message) {
+      localNote = message;
+      noteUntil = Date.now() + 7000;
+      text('status', message);
     }
 
     document.getElementById('rpc-form').addEventListener('submit', (event) => {
       event.preventDefault();
-      if (!online) {
-        offline();
-        return;
-      }
       const body = {
         key1: document.getElementById('key1').value,
         key2: document.getElementById('key2').value,
@@ -531,35 +602,28 @@
         project2: document.getElementById('project2').value,
         project3: document.getElementById('project3').value,
       };
-      postJson('/api/rpc', body).then(() => clearRpc()).catch((error) => text('status', error.message));
+      postJson('/api/rpc', body).then(() => {
+        clearRpc();
+        note('Kľúč je uložený. Do polí sa nevracia.');
+      }).catch((error) => text('status', error.message));
     });
 
     document.getElementById('wallet-form').addEventListener('submit', (event) => {
       event.preventDefault();
       const address = document.getElementById('address').value;
-      if (!online) {
-        offline();
-        return;
-      }
       postJson('/api/wallet', { address }).then(() => {
         document.getElementById('address').value = '';
+        note('Adresa je uložená. Paper príkazy patria len jej.');
       }).catch((error) => text('status', error.message));
     });
 
     function phantomProvider() {
       const read = () => {
-        if (window.phantom && window.phantom.solana && window.phantom.solana.isPhantom) {
-          return window.phantom.solana;
-        }
-        if (window.solana && window.solana.isPhantom) {
-          return window.solana;
-        }
+        if (window.phantom && window.phantom.solana && window.phantom.solana.isPhantom) return window.phantom.solana;
+        if (window.solana && window.solana.isPhantom) return window.solana;
         return null;
       };
-      const found = read();
-      if (found) {
-        return Promise.resolve(found);
-      }
+      if (read()) return Promise.resolve(read());
       return new Promise((resolve) => {
         const finish = () => resolve(read());
         window.addEventListener('phantom#initialized', finish, { once: true });
@@ -570,50 +634,42 @@
     document.getElementById('phantom').addEventListener('click', async () => {
       const provider = await phantomProvider();
       if (!provider) {
-        const port = location.port ? `:${location.port}` : '';
-        localNote = location.hostname === '127.0.0.1'
-          ? `Phantom sa na 127.0.0.1 nepripája. Otvor http://localhost${port}.`
-          : 'Phantom v tomto prehliadači nie je. Vlož verejnú adresu.';
-        noteUntil = Date.now() + 8000;
-        text('status', localNote);
-        return;
-      }
-      if (!online) {
-        offline();
+        const port = location.port ? ':' + location.port : '';
+        note(location.hostname === '127.0.0.1'
+          ? 'Phantom sa na 127.0.0.1 nepripája. Otvor http://localhost' + port + ', alebo vlož verejnú adresu.'
+          : 'Phantom v tomto prehliadači nie je. Vlož verejnú adresu a ulož ju.');
+        document.getElementById('address').focus();
         return;
       }
       try {
         const connected = await provider.connect();
-        const address = connected.publicKey.toString();
-        await postJson('/api/wallet', { address });
+        await postJson('/api/wallet', { address: connected.publicKey.toString() });
+        note('Phantom dal verejnú adresu. Nič nepodpisuje.');
       } catch (error) {
         text('status', error && error.message ? error.message : 'Phantom spojenie zlyhalo');
       }
     });
 
     document.getElementById('disconnect').addEventListener('click', () => {
-      if (!online) return;
-      postJson('/api/wallet', { disconnect: true }).catch((error) => text('status', error.message));
+      postJson('/api/wallet', { disconnect: true })
+        .then(() => note('Adresa je odpojená. Čítanie bez nej reťaz nevolá.'))
+        .catch((error) => text('status', error.message));
     });
 
     start.addEventListener('click', () => postJson('/api/start').catch((error) => text('status', error.message)));
     stop.addEventListener('click', () => postJson('/api/stop').catch((error) => text('status', error.message)));
-    kill.addEventListener('click', () => postJson('/api/kill').catch((error) => text('status', error.message)));
+    document.getElementById('kill').addEventListener('click', () => postJson('/api/kill').catch((error) => text('status', error.message)));
     document.getElementById('release').addEventListener('click', () => postJson('/api/release').catch((error) => text('status', error.message)));
 
     function tick() {
-      text('clock', new Date().toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Bratislava' }));
+      text('clock', new Date().toLocaleTimeString('sk-SK', {
+        hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Bratislava',
+      }));
     }
     tick();
     setInterval(tick, 1000);
-    refresh().catch(() => {
-      try {
-        useBrowser();
-      } catch {
-        offline();
-      }
-    });
-    setInterval(() => { refresh().catch(() => { if (!online) offline(); }); }, 2000);
+    ready();
+    setInterval(() => { refresh(); }, 2000);
   </script>
 </body>
 </html>

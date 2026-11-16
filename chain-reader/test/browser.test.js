@@ -299,6 +299,29 @@ test('a filling wallet asks for signatures older than its cursor', async () => {
   assert.equal(pages[0].before, 'old-sig');
 });
 
+test('a saved key and address return in the next desk and stay out of the snapshot', () => {
+  const memory = new Map();
+  const storage = {
+    getItem: (key) => memory.get(key) || null,
+    setItem: (key, value) => memory.set(key, value),
+  };
+  const desk = createBrowserDesk({ auto: false, storage });
+  desk.connectRpc({ key1: `"${KEY}"`, key2: 'api-key=helius-key-bbbb' });
+  desk.connectWallet({ address: `  ${OUR}  ` });
+  const again = createBrowserDesk({ auto: false, storage });
+  const snap = again.snapshot();
+  assert.deepEqual(snap.keys, [true, true, false]);
+  assert.equal(snap.wallet, OUR);
+  assert.equal(JSON.stringify(snap).includes(KEY), false);
+  assert.equal((memory.get('elite-desk-book') || '').includes(KEY), false);
+  assert.equal(memory.get('elite-desk-secrets').includes(KEY), true);
+  const cleared = again.connectWallet({ disconnect: true });
+  assert.equal(cleared.wallet, null);
+  const restored = createBrowserDesk({ auto: false, storage });
+  assert.equal(restored.snapshot().wallet, null);
+  assert.deepEqual(restored.snapshot().keys, [true, true, false]);
+});
+
 test('a browser desk keeps a public Phantom address', () => {
   const desk = createBrowserDesk({ auto: false });
   const address = 'So11111111111111111111111111111111111111112';

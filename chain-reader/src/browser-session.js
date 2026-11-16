@@ -2,7 +2,7 @@
 
 const { PUMP_PROGRAM_ID } = require('./config');
 const { discoverRecentWallets } = require('./discover');
-const { parseHeliusKey } = require('./helius-key');
+const { parseHeliusKey, RPC_KEY } = require('./helius-key');
 const { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, traderLadder } = require('./paper/cycle');
 
 const POLL_CREDITS = 31;
@@ -11,6 +11,7 @@ const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const PUBLIC_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const PROJECT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BOOK_KEY = 'elite-desk-book';
+const SECRET_KEY = 'elite-desk-secrets';
 
 const ROLES = Object.freeze([
   { id: 'reader', name: 'Čítač', detail: 'Číta len s pripojenou verejnou adresou. Najprv peňaženku pod 30, potom čerstvý signál, inak len nové podpisy špičky programu. Jedno kolo má strop 31 volaní.' },
@@ -30,9 +31,10 @@ function createBrowserDesk(options = {}) {
   const auto = options.auto !== false;
   const usable = options.usableCredits ?? USABLE_CREDITS;
   const now = options.now || Date.now;
-  let keys = ['', '', ''];
-  let projects = ['', '', ''];
-  let wallet = null;
+  const secrets = loadSecrets(storage);
+  let keys = secrets.keys;
+  let projects = secrets.projects;
+  let wallet = secrets.wallet;
   let ledger = loadStored(storage);
   let running = false;
   let timer = null;
@@ -95,6 +97,7 @@ function createBrowserDesk(options = {}) {
       throw fail(error, 400);
     }
     error = null;
+    saveSecrets(storage, { keys, projects, wallet });
     return snapshot();
   }
 
@@ -102,14 +105,15 @@ function createBrowserDesk(options = {}) {
     if (body && body.disconnect) {
       wallet = null;
     } else {
-      const address = String(body && body.address ? body.address : '').trim();
-      if (!PUBLIC_ADDRESS.test(address)) {
+      const address = readPublicAddress(body && body.address);
+      if (!address) {
         error = 'Povolená je len verejná adresa. Súkromný kľúč sa neprijíma.';
         throw fail(error, 400);
       }
       wallet = address;
     }
     error = null;
+    saveSecrets(storage, { keys, projects, wallet });
     return snapshot();
   }
 
@@ -260,7 +264,7 @@ function createBrowserDesk(options = {}) {
       return snapshot();
     }
     if (!keys.some(Boolean)) {
-      error = 'RPC nie je pripojené. Vlož Helius kľúč vľavo.';
+      error = 'RPC nie je pripojené. Vlož Helius kľúč v kroku 1.';
       throw fail(error, 409);
     }
     generation += 1;
@@ -344,6 +348,47 @@ function createBrowserDesk(options = {}) {
 function paceMs(keyCount) {
   const perKey = Math.ceil((POLL_CREDITS * MONTH_MS) / USABLE_CREDITS);
   return Math.ceil(perKey / Math.max(1, keyCount));
+}
+
+function readPublicAddress(value) {
+  const text = String(value || '').replace(/\s+/g, '');
+  return PUBLIC_ADDRESS.test(text) ? text : '';
+}
+
+function loadSecrets(storage) {
+  const empty = { keys: ['', '', ''], projects: ['', '', ''], wallet: null };
+  if (!storage) {
+    return empty;
+  }
+  try {
+    const raw = JSON.parse(storage.getItem(SECRET_KEY) || 'null');
+    if (!raw || typeof raw !== 'object') {
+      return empty;
+    }
+    const keys = [0, 1, 2].map((index) => {
+      const value = Array.isArray(raw.keys) ? String(raw.keys[index] || '') : '';
+      return RPC_KEY.test(value) ? value : '';
+    });
+    const projects = [0, 1, 2].map((index) => {
+      const value = Array.isArray(raw.projects) ? String(raw.projects[index] || '') : '';
+      return PROJECT_UUID.test(value) ? value : '';
+    });
+    const wallet = readPublicAddress(raw.wallet);
+    return { keys, projects, wallet: wallet || null };
+  } catch {
+    return empty;
+  }
+}
+
+function saveSecrets(storage, secrets) {
+  if (!storage) {
+    return;
+  }
+  storage.setItem(SECRET_KEY, JSON.stringify({
+    keys: secrets.keys,
+    projects: secrets.projects,
+    wallet: secrets.wallet,
+  }));
 }
 
 function loadStored(storage) {

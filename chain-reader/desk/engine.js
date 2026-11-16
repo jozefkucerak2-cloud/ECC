@@ -417,12 +417,20 @@ var EliteEngine = (() => {
       var RPC_KEY = /^[A-Za-z0-9_-]{8,64}$/;
       var HELIUS_HOSTS = /* @__PURE__ */ new Set(["mainnet.helius-rpc.com", "beta.helius-rpc.com"]);
       function parseHeliusKey(value) {
-        const text = String(value || "").trim();
+        let text = String(value || "").trim();
+        if (text.startsWith('"') && text.endsWith('"') || text.startsWith("'") && text.endsWith("'")) {
+          text = text.slice(1, -1).trim();
+        }
+        text = text.replace(/\s+/g, "");
         if (!text) {
           return "";
         }
         if (text.includes("://") || text.startsWith("//")) {
           return keyFromUrl(text);
+        }
+        const embedded = text.match(/(?:api-key=)([A-Za-z0-9_-]{8,64})/i);
+        if (embedded) {
+          return embedded[1];
         }
         if (!RPC_KEY.test(text)) {
           throw badKey();
@@ -930,7 +938,7 @@ var EliteEngine = (() => {
     "chain-reader/src/browser-session.js"(exports, module) {
       var { PUMP_PROGRAM_ID } = require_config();
       var { discoverRecentWallets } = require_discover();
-      var { parseHeliusKey } = require_helius_key();
+      var { parseHeliusKey, RPC_KEY } = require_helius_key();
       var { LIMITS, emptyLedger, haltLedger, loadLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, traderLadder } = require_cycle();
       var POLL_CREDITS = 31;
       var USABLE_CREDITS = 95e4;
@@ -938,6 +946,7 @@ var EliteEngine = (() => {
       var PUBLIC_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
       var PROJECT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       var BOOK_KEY = "elite-desk-book";
+      var SECRET_KEY = "elite-desk-secrets";
       var ROLES = Object.freeze([
         { id: "reader", name: "\u010C\xEDta\u010D", detail: "\u010C\xEDta len s pripojenou verejnou adresou. Najprv pe\u0148a\u017Eenku pod 30, potom \u010Derstv\xFD sign\xE1l, inak len nov\xE9 podpisy \u0161pi\u010Dky programu. Jedno kolo m\xE1 strop 31 volan\xED." },
         { id: "analyst", name: "Analytik", detail: "N\xE1vrh vznikne a\u017E ke\u010F m\xE1 jedna pe\u0148a\u017Eenka 30 \u010Dist\xFDch obchodov." },
@@ -956,9 +965,10 @@ var EliteEngine = (() => {
         const auto = options.auto !== false;
         const usable = options.usableCredits ?? USABLE_CREDITS;
         const now = options.now || Date.now;
-        let keys = ["", "", ""];
-        let projects = ["", "", ""];
-        let wallet = null;
+        const secrets = loadSecrets(storage);
+        let keys = secrets.keys;
+        let projects = secrets.projects;
+        let wallet = secrets.wallet;
         let ledger = loadStored(storage);
         let running = false;
         let timer = null;
@@ -1019,20 +1029,22 @@ var EliteEngine = (() => {
             throw fail(error, 400);
           }
           error = null;
+          saveSecrets(storage, { keys, projects, wallet });
           return snapshot();
         }
         function connectWallet(body) {
           if (body && body.disconnect) {
             wallet = null;
           } else {
-            const address = String(body && body.address ? body.address : "").trim();
-            if (!PUBLIC_ADDRESS.test(address)) {
+            const address = readPublicAddress(body && body.address);
+            if (!address) {
               error = "Povolen\xE1 je len verejn\xE1 adresa. S\xFAkromn\xFD k\u013E\xFA\u010D sa neprij\xEDma.";
               throw fail(error, 400);
             }
             wallet = address;
           }
           error = null;
+          saveSecrets(storage, { keys, projects, wallet });
           return snapshot();
         }
         function roleDetail(role) {
@@ -1174,7 +1186,7 @@ var EliteEngine = (() => {
             return snapshot();
           }
           if (!keys.some(Boolean)) {
-            error = "RPC nie je pripojen\xE9. Vlo\u017E Helius k\u013E\xFA\u010D v\u013Eavo.";
+            error = "RPC nie je pripojen\xE9. Vlo\u017E Helius k\u013E\xFA\u010D v kroku 1.";
             throw fail(error, 409);
           }
           generation += 1;
@@ -1251,6 +1263,44 @@ var EliteEngine = (() => {
       function paceMs(keyCount) {
         const perKey = Math.ceil(POLL_CREDITS * MONTH_MS / USABLE_CREDITS);
         return Math.ceil(perKey / Math.max(1, keyCount));
+      }
+      function readPublicAddress(value) {
+        const text = String(value || "").replace(/\s+/g, "");
+        return PUBLIC_ADDRESS.test(text) ? text : "";
+      }
+      function loadSecrets(storage) {
+        const empty = { keys: ["", "", ""], projects: ["", "", ""], wallet: null };
+        if (!storage) {
+          return empty;
+        }
+        try {
+          const raw = JSON.parse(storage.getItem(SECRET_KEY) || "null");
+          if (!raw || typeof raw !== "object") {
+            return empty;
+          }
+          const keys = [0, 1, 2].map((index) => {
+            const value = Array.isArray(raw.keys) ? String(raw.keys[index] || "") : "";
+            return RPC_KEY.test(value) ? value : "";
+          });
+          const projects = [0, 1, 2].map((index) => {
+            const value = Array.isArray(raw.projects) ? String(raw.projects[index] || "") : "";
+            return PROJECT_UUID.test(value) ? value : "";
+          });
+          const wallet = readPublicAddress(raw.wallet);
+          return { keys, projects, wallet: wallet || null };
+        } catch {
+          return empty;
+        }
+      }
+      function saveSecrets(storage, secrets) {
+        if (!storage) {
+          return;
+        }
+        storage.setItem(SECRET_KEY, JSON.stringify({
+          keys: secrets.keys,
+          projects: secrets.projects,
+          wallet: secrets.wallet
+        }));
       }
       function loadStored(storage) {
         if (!storage) {

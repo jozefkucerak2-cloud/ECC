@@ -221,6 +221,34 @@ test('a Helius address is stored as its key', () => {
   assert.equal(JSON.stringify(saved).includes('mainnet.helius-rpc.com'), false);
 });
 
+test('a rejected Helius key is named in Slovak and the raw code stays off the page', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
+  const desk = createDesk({
+    env: {},
+    paperPath: path.join(directory, 'paper.json'),
+    secretPath: path.join(directory, 'rpc.json'),
+    createPool: () => ({
+      async refreshUsage() {},
+      msUntilPoll() {
+        return 0;
+      },
+      async discover() {
+        throw new Error(`rpc http 401 api-key=${KEY}`);
+      },
+    }),
+    watch: async (pool) => {
+      await pool.discover();
+    },
+  });
+  desk.connectRpc({ key1: KEY });
+  desk.connectWallet({ address: 'So11111111111111111111111111111111111111112' });
+  await desk.start();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(desk.snapshot().error, 'Helius kľúč bol odmietnutý.');
+  assert.equal(desk.snapshot().running, false);
+  assert.equal(JSON.stringify(desk.snapshot()).includes(KEY), false);
+});
+
 test('a private key is refused and a public address is kept', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elite-paper-'));
   const desk = createDesk({

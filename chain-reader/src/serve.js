@@ -25,11 +25,15 @@ const ROLES = Object.freeze([
 
 function publicError(error, env) {
   let text = String(error && error.message ? error.message : 'štart zlyhal');
+  text = text.replace(/api-key=[^&\s'"]+/gi, 'api-key=redacted');
   for (const index of [1, 2, 3]) {
     const secret = env[`HELIUS_API_KEY_${index}`];
     if (secret) {
       text = text.split(String(secret)).join('[redacted]');
     }
+  }
+  if (text.includes('401') || text.includes('403')) {
+    return 'Helius kľúč bol odmietnutý.';
   }
   return text;
 }
@@ -128,7 +132,7 @@ function createDesk(options = {}) {
     }
     const current = runtimeEnv();
     if (!keyPresence(current).some(Boolean)) {
-      state.error = 'RPC nie je pripojené. Vlož Helius kľúč vľavo.';
+      state.error = 'RPC nie je pripojené. Vlož Helius kľúč v kroku 1.';
       const error = new Error(state.error);
       error.statusCode = 409;
       throw error;
@@ -276,7 +280,7 @@ function createDesk(options = {}) {
     if (body && body.disconnect) {
       state.wallet = null;
     } else {
-      const address = String(body && body.address || '').trim();
+      const address = String(body && body.address || '').replace(/\s+/g, '');
       if (!PUBLIC_ADDRESS.test(address)) {
         state.error = 'Povolená je len verejná adresa. Súkromný kľúč sa neprijíma.';
         const error = new Error(state.error);
