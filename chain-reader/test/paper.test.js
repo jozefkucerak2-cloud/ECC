@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { classifyTrade } = require('../src/classify');
-const { emptyLedger, focusAddress, loadLedger, haltLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, LIMITS } = require('../src/paper/cycle');
+const { emptyLedger, focusAddress, loadLedger, haltLedger, ordersOnDay, readTarget, releaseLedger, rollCredits, runCycle, summarizePaper, traderLadder, LIMITS } = require('../src/paper/cycle');
 
 const NOW = 1_700_000_000;
 const MINT = 'Mint111111111111111111111111111111111111111';
@@ -63,6 +63,20 @@ test('the fee is not counted as the price of the buy', () => {
   assert.equal(trade.solLamports, 1_000_000);
 });
 
+test('the agent ladder ranks a filling wallet and prices the paper stake at 50 USD', () => {
+  const opened = runCycle(emptyLedger(), { trades: trades(4, 'buy') }, NOW, OUR);
+  const ladder = traderLadder(opened.ledger, NOW);
+  assert.equal(LIMITS.paperUsd, 50);
+  assert.equal(ladder.length, 1);
+  assert.equal(ladder[0].rank, 1);
+  assert.equal(ladder[0].classified, 4);
+  assert.equal(ladder[0].need, 30);
+  assert.equal(ladder[0].qualified, false);
+  assert.equal(ladder[0].stakeUsd, 50);
+  assert.equal(ladder[0].reason, 'agenti zbierajú vzorku');
+  assert.equal(opened.ledger.mode, 'paper');
+});
+
 test('fewer than 30 clean trades produces no order', () => {
   const result = runCycle(emptyLedger(), { trades: trades(29, 'buy') }, NOW);
   assert.equal(result.ledger.orders.length, 0);
@@ -77,6 +91,8 @@ test('thirty fresh buys become one paper order and a repeat is ignored', () => {
   assert.equal(first.ledger.orders[0].account, OUR);
   assert.equal(first.ledger.orders[0].source, 'WalletA');
   assert.equal(first.ledger.positions[0].stopPrice, 0.85);
+  assert.equal(first.ledger.orders[0].stakeUsd, 50);
+  assert.equal(first.ledger.positions[0].stakeUsd, 50);
   assert.equal(first.ledger.positions.length, 1);
   assert.match(first.decision, /paper buy/);
   assert.notEqual(
@@ -162,6 +178,10 @@ test('paper summary sums closed results and keeps the open row', () => {
     positions: [],
   });
   assert.equal(summary.realizedBps, -500);
+  assert.equal(summary.realizedUsd, -2.5);
+  assert.equal(summary.stakeUsd, 50);
+  assert.equal(summary.rounds[0].resultUsd, 5);
+  assert.equal(summary.rounds[1].resultUsd, -7.5);
   assert.equal(summary.closed, 2);
   assert.equal(summary.wins, 1);
   assert.equal(summary.losses, 1);

@@ -6,6 +6,7 @@ const LIMITS = Object.freeze({
   minTraderSamples: 30,
   maxEventAgeSec: 60,
   paperUnits: 1,
+  paperUsd: 50,
   stopBps: 1500,
   seenCap: 120,
 });
@@ -76,13 +77,38 @@ function releaseLedger(raw) {
   return { ...loadLedger(raw), halted: false, mode: 'paper' };
 }
 
-function traderLadder(ledger) {
-  return rankWallets(loadLedger(ledger).wallets).slice(0, 5).map((row) => ({
-    address: row.address,
-    classified: row.classified,
-    side: row.last ? row.last.side : null,
-    mint: row.last ? row.last.mint : null,
-  }));
+function traderLadder(ledger, nowSeconds) {
+  const now = Number.isInteger(nowSeconds) ? nowSeconds : null;
+  return rankWallets(loadLedger(ledger).wallets).slice(0, 8).map((row, index) => {
+    const age = now == null || !row.last ? null : tradeAge(row.last, now);
+    const fresh = age != null && Number.isFinite(age) && age >= 0 && age <= LIMITS.maxEventAgeSec;
+    const qualified = row.classified >= LIMITS.minTraderSamples && fresh && Boolean(row.last && row.last.mint);
+    return {
+      rank: index + 1,
+      address: row.address,
+      classified: row.classified,
+      need: LIMITS.minTraderSamples,
+      side: row.last ? row.last.side : null,
+      mint: row.last ? row.last.mint : null,
+      ageSec: age != null && Number.isFinite(age) ? age : null,
+      qualified,
+      stakeUsd: LIMITS.paperUsd,
+      reason: ladderReason(row, fresh),
+    };
+  });
+}
+
+function ladderReason(row, fresh) {
+  if (row.classified >= LIMITS.minTraderSamples && fresh) {
+    return 'pripravený na paper 50 USD';
+  }
+  if (row.classified >= LIMITS.minTraderSamples) {
+    return 'čaká na čerstvý signál';
+  }
+  if (row.exhausted) {
+    return 'história vyčerpaná pred 30';
+  }
+  return 'agenti zbierajú vzorku';
 }
 
 function focusAddress(raw, nowSeconds) {
@@ -317,6 +343,7 @@ function propose(best) {
       signature: last.signature,
       blockTime: last.blockTime,
       units: LIMITS.paperUnits,
+      stakeUsd: LIMITS.paperUsd,
       entryPrice,
       stopPrice,
     },
@@ -391,6 +418,7 @@ function apply(risk, ledger, nowSeconds) {
       units: order.units,
       entryPrice: order.entryPrice,
       stopPrice: order.stopPrice,
+      stakeUsd: order.stakeUsd,
       openedAt: nowSeconds,
       entryBlockTime: Number.isInteger(order.blockTime) ? order.blockTime : nowSeconds,
     });
@@ -521,6 +549,7 @@ function summarizePaper(ledger) {
     rounds.push(closedRound(entry, order, 'stop', exitPrice));
   }
   for (const position of Array.isArray(source.positions) ? source.positions : []) {
+    const stakeUsd = stakeOf(position, null);
     rounds.push({
       id: position.id || '',
       mint: position.mint || '',
@@ -529,6 +558,8 @@ function summarizePaper(ledger) {
       entryPrice: finite(position.entryPrice),
       exitPrice: null,
       resultBps: null,
+      stakeUsd,
+      resultUsd: null,
       state: 'otvorený',
       at: Number.isInteger(position.openedAt) ? position.openedAt : null,
     });
@@ -536,6 +567,8 @@ function summarizePaper(ledger) {
   const scored = rounds.filter((round) => round.state !== 'otvorený' && round.resultBps != null);
   return {
     realizedBps: scored.reduce((sum, round) => sum + round.resultBps, 0),
+    realizedUsd: Math.round(scored.reduce((sum, round) => sum + round.resultUsd, 0) * 100) / 100,
+    stakeUsd: LIMITS.paperUsd,
     closed: scored.length,
     wins: scored.filter((round) => round.resultBps > 0).length,
     losses: scored.filter((round) => round.resultBps < 0).length,
@@ -546,6 +579,8 @@ function summarizePaper(ledger) {
 
 function closedRound(entry, order, state, exitPrice) {
   const entryPrice = finite(entry && entry.entryPrice) ?? finite(order.entryPrice);
+  const result = resultBps(entryPrice, exitPrice);
+  const stakeUsd = stakeOf(entry, order);
   return {
     id: order.id || '',
     mint: (entry && entry.mint) || order.mint || '',
@@ -553,10 +588,17 @@ function closedRound(entry, order, state, exitPrice) {
     account: (entry && entry.account) || order.account || '',
     entryPrice,
     exitPrice,
-    resultBps: resultBps(entryPrice, exitPrice),
+    resultBps: result,
+    stakeUsd,
+    resultUsd: result == null ? null : Math.round((result / 10_000) * stakeUsd * 100) / 100,
     state,
     at: Number.isInteger(order.recordedAt) ? order.recordedAt : null,
   };
+}
+
+function stakeOf(entry, order) {
+  const stake = finite(entry && entry.stakeUsd) ?? finite(order && order.stakeUsd) ?? LIMITS.paperUsd;
+  return stake > 0 ? stake : LIMITS.paperUsd;
 }
 
 function finite(value) {

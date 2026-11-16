@@ -476,6 +476,7 @@ var EliteEngine = (() => {
         minTraderSamples: 30,
         maxEventAgeSec: 60,
         paperUnits: 1,
+        paperUsd: 50,
         stopBps: 1500,
         seenCap: 120
       });
@@ -535,13 +536,37 @@ var EliteEngine = (() => {
       function releaseLedger(raw) {
         return { ...loadLedger(raw), halted: false, mode: "paper" };
       }
-      function traderLadder(ledger) {
-        return rankWallets(loadLedger(ledger).wallets).slice(0, 5).map((row) => ({
-          address: row.address,
-          classified: row.classified,
-          side: row.last ? row.last.side : null,
-          mint: row.last ? row.last.mint : null
-        }));
+      function traderLadder(ledger, nowSeconds) {
+        const now = Number.isInteger(nowSeconds) ? nowSeconds : null;
+        return rankWallets(loadLedger(ledger).wallets).slice(0, 8).map((row, index) => {
+          const age = now == null || !row.last ? null : tradeAge(row.last, now);
+          const fresh = age != null && Number.isFinite(age) && age >= 0 && age <= LIMITS.maxEventAgeSec;
+          const qualified = row.classified >= LIMITS.minTraderSamples && fresh && Boolean(row.last && row.last.mint);
+          return {
+            rank: index + 1,
+            address: row.address,
+            classified: row.classified,
+            need: LIMITS.minTraderSamples,
+            side: row.last ? row.last.side : null,
+            mint: row.last ? row.last.mint : null,
+            ageSec: age != null && Number.isFinite(age) ? age : null,
+            qualified,
+            stakeUsd: LIMITS.paperUsd,
+            reason: ladderReason(row, fresh)
+          };
+        });
+      }
+      function ladderReason(row, fresh) {
+        if (row.classified >= LIMITS.minTraderSamples && fresh) {
+          return "pripraven\xFD na paper 50 USD";
+        }
+        if (row.classified >= LIMITS.minTraderSamples) {
+          return "\u010Dak\xE1 na \u010Derstv\xFD sign\xE1l";
+        }
+        if (row.exhausted) {
+          return "hist\xF3ria vy\u010Derpan\xE1 pred 30";
+        }
+        return "agenti zbieraj\xFA vzorku";
       }
       function focusAddress(raw, nowSeconds) {
         const ledger = loadLedger(raw);
@@ -755,6 +780,7 @@ var EliteEngine = (() => {
             signature: last.signature,
             blockTime: last.blockTime,
             units: LIMITS.paperUnits,
+            stakeUsd: LIMITS.paperUsd,
             entryPrice,
             stopPrice
           },
@@ -825,6 +851,7 @@ var EliteEngine = (() => {
             units: order.units,
             entryPrice: order.entryPrice,
             stopPrice: order.stopPrice,
+            stakeUsd: order.stakeUsd,
             openedAt: nowSeconds,
             entryBlockTime: Number.isInteger(order.blockTime) ? order.blockTime : nowSeconds
           });
@@ -944,6 +971,7 @@ var EliteEngine = (() => {
           rounds.push(closedRound(entry, order, "stop", exitPrice));
         }
         for (const position of Array.isArray(source.positions) ? source.positions : []) {
+          const stakeUsd = stakeOf(position, null);
           rounds.push({
             id: position.id || "",
             mint: position.mint || "",
@@ -952,6 +980,8 @@ var EliteEngine = (() => {
             entryPrice: finite(position.entryPrice),
             exitPrice: null,
             resultBps: null,
+            stakeUsd,
+            resultUsd: null,
             state: "otvoren\xFD",
             at: Number.isInteger(position.openedAt) ? position.openedAt : null
           });
@@ -959,6 +989,8 @@ var EliteEngine = (() => {
         const scored = rounds.filter((round) => round.state !== "otvoren\xFD" && round.resultBps != null);
         return {
           realizedBps: scored.reduce((sum, round) => sum + round.resultBps, 0),
+          realizedUsd: Math.round(scored.reduce((sum, round) => sum + round.resultUsd, 0) * 100) / 100,
+          stakeUsd: LIMITS.paperUsd,
           closed: scored.length,
           wins: scored.filter((round) => round.resultBps > 0).length,
           losses: scored.filter((round) => round.resultBps < 0).length,
@@ -968,6 +1000,8 @@ var EliteEngine = (() => {
       }
       function closedRound(entry, order, state, exitPrice) {
         const entryPrice = finite(entry && entry.entryPrice) ?? finite(order.entryPrice);
+        const result = resultBps(entryPrice, exitPrice);
+        const stakeUsd = stakeOf(entry, order);
         return {
           id: order.id || "",
           mint: entry && entry.mint || order.mint || "",
@@ -975,10 +1009,16 @@ var EliteEngine = (() => {
           account: entry && entry.account || order.account || "",
           entryPrice,
           exitPrice,
-          resultBps: resultBps(entryPrice, exitPrice),
+          resultBps: result,
+          stakeUsd,
+          resultUsd: result == null ? null : Math.round(result / 1e4 * stakeUsd * 100) / 100,
           state,
           at: Number.isInteger(order.recordedAt) ? order.recordedAt : null
         };
+      }
+      function stakeOf(entry, order) {
+        const stake = finite(entry && entry.stakeUsd) ?? finite(order && order.stakeUsd) ?? LIMITS.paperUsd;
+        return stake > 0 ? stake : LIMITS.paperUsd;
       }
       function finite(value) {
         const number = Number(value);
@@ -1035,7 +1075,7 @@ var EliteEngine = (() => {
         { id: "analyst", name: "Analytik", detail: "N\xE1vrh vznikne a\u017E ke\u010F m\xE1 jedna pe\u0148a\u017Eenka 30 \u010Dist\xFDch obchodov." },
         { id: "skeptic", name: "Skeptik", detail: "Zamietne vzorku pod 30, nejasn\xFD smer a udalos\u0165 star\u0161iu ako 60 sek\xFAnd." },
         { id: "ceo", name: "CEO", detail: "N\xE1vrh posunie \u010Falej. Limity nezmen\xED a veto neprep\xED\u0161e." },
-        { id: "risk", name: "Risk governor", detail: "Pust\xED pr\xEDkaz len na pripojen\xFA verejn\xFA adresu, do 3 poz\xEDci\xED a 10 pr\xEDkazov za de\u0148. Stop je 15 % pod vstupom." },
+        { id: "risk", name: "Risk governor", detail: "Pust\xED paper pr\xEDkaz za 50 USD len na pripojen\xFA verejn\xFA adresu, do 3 poz\xEDci\xED a 10 pr\xEDkazov za de\u0148. Stop je 15 % pod vstupom. Live odoslanie nie je zapnut\xE9." },
         { id: "executor", name: "Executor", detail: "Zap\xED\u0161e paper pr\xEDkaz na na\u0161u verejn\xFA adresu. Na sie\u0165 ni\u010D neposiela." },
         { id: "notifier", name: "Hl\xE1senie", detail: "Samostatn\xFD riadok na tejto ploche. Telef\xF3n sa zapoj\xED a\u017E po zvolen\xED kan\xE1la." },
         { id: "wallet", name: "Phantom", detail: "Ost\xE1va odpojen\xE1. Live podpis nie je v tomto behu." }
@@ -1471,12 +1511,17 @@ var EliteEngine = (() => {
             source: shortId(order.source),
             mint: shortId(order.mint)
           })),
-          ladder: traderLadder(ledger).map((row) => ({
+          ladder: traderLadder(ledger, Math.floor(Date.now() / 1e3)).map((row) => ({
             address: shortId(row.address),
             classified: row.classified,
-            need: LIMITS.minTraderSamples,
+            need: row.need,
             side: row.side,
-            mint: shortId(row.mint)
+            mint: shortId(row.mint),
+            rank: row.rank,
+            ageSec: row.ageSec,
+            qualified: row.qualified,
+            stakeUsd: row.stakeUsd,
+            reason: row.reason
           })),
           summary: summarizePaper(ledger)
         };

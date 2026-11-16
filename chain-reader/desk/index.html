@@ -292,21 +292,22 @@
         </article>
       </section>
       <section class="card" id="card-summary">
-        <div class="block-head"><p>Paper súhrn</p><p class="count" id="pnl-count">0 ziskov · 0 strát · 0 otvorených</p></div>
+        <div class="block-head"><p>Paper 50 USD</p><p class="count" id="pnl-count">0 ziskov · 0 strát · 0 otvorených</p></div>
         <div class="metrics wide">
           <div class="metric"><small>Výsledok</small><b id="pnl">0,0 %</b></div>
           <div class="metric"><small>Otvorené</small><b id="sum-open">0</b></div>
           <div class="metric"><small>Zatvorené</small><b id="sum-closed">0</b></div>
           <div class="metric"><small>Posledné kolo</small><b id="decision">bez príkazu</b></div>
         </div>
-        <p class="empty" id="rounds-empty">Zatiaľ žiadny paper obchod. Prvý zápis príde po 30 čistých obchodoch a čerstvom signáli.</p>
+        <p class="empty" id="rounds-empty">Stávka jedného paper obchodu je 50 USD. Prvý zápis príde po 30 čistých obchodoch a čerstvom signáli.</p>
         <ul class="rows" id="rounds"></ul>
         <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
+        <p class="fine" id="live-gate">Live odoslanie nie je zapnuté. Kniha ostáva paper a jeden príkaz je 50 USD.</p>
       </section>
       <section class="board">
         <article class="card" id="card-run">
-          <div class="block-head"><p>Rebríček</p><p class="count" id="ladder-count">0 / 30</p></div>
-          <p class="empty" id="ladder-empty">Čítač ešte nemá čistý obchod. Návrh vznikne až pri 30 obchodoch jednej peňaženky.</p>
+          <div class="block-head"><p>Rebríček agentov</p><p class="count" id="ladder-count">0 / 30</p></div>
+          <p class="empty" id="ladder-empty">Agenti ešte nemajú čistý obchod. Rebríček sa skladá z načítanej reťaze a paper 50 USD vznikne až pri 30.</p>
           <ul class="rows" id="ladder"></ul>
         </article>
         <article class="card">
@@ -367,6 +368,12 @@
       const percent = (Number.isFinite(bps) ? bps : 0) / 100;
       const sign = percent > 0 ? '+' : '';
       return sign + percent.toLocaleString('sk-SK', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
+    }
+
+    function formatUsd(value) {
+      const number = Number.isFinite(value) ? value : 0;
+      const sign = number > 0 ? '+' : '';
+      return sign + number.toLocaleString('sk-SK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' USD';
     }
 
     function formatPrice(value) {
@@ -516,9 +523,9 @@
       rows.forEach((row) => {
         const item = document.createElement('li');
         const name = document.createElement('strong');
-        name.textContent = row.address;
+        name.textContent = (row.rank || '') + ' · ' + row.address;
         const meta = document.createElement('span');
-        meta.textContent = (row.side || '—') + ' · ' + row.classified + '/' + row.need;
+        meta.textContent = (row.reason || 'vzorka') + ' · ' + (row.side || '—') + ' · ' + row.classified + '/' + row.need;
         const bar = document.createElement('div');
         bar.className = 'lane';
         const fill = document.createElement('span');
@@ -540,7 +547,7 @@
       const summary = book.summary || {};
       const bps = Number.isFinite(summary.realizedBps) ? summary.realizedBps : 0;
       const pnl = document.getElementById('pnl');
-      pnl.textContent = formatBps(bps);
+      pnl.textContent = formatBps(bps) + ' · ' + formatUsd(summary.realizedUsd);
       pnl.classList.toggle('up', bps > 0);
       pnl.classList.toggle('down', bps < 0);
       text('sum-open', String(summary.open || 0));
@@ -555,7 +562,9 @@
         const name = document.createElement('strong');
         name.textContent = shortText(round.mint) + ' · ' + roundLabel(round.state);
         const meta = document.createElement('span');
-        const result = round.state === 'otvorený' ? 'beží' : (round.resultBps == null ? 'bez ceny' : formatBps(round.resultBps));
+        const result = round.state === 'otvorený'
+          ? 'beží · ' + formatUsd(round.stakeUsd == null ? 50 : round.stakeUsd)
+          : (round.resultBps == null ? 'bez ceny' : formatBps(round.resultBps) + ' · ' + formatUsd(round.resultUsd));
         meta.textContent = result + ' · vstup ' + formatPrice(round.entryPrice) + ' · výstup ' + formatPrice(round.exitPrice);
         item.append(name, meta);
         rounds.append(item);

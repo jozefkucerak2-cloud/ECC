@@ -17,7 +17,7 @@ const ROLES = Object.freeze([
   { id: 'analyst', name: 'Analytik', detail: 'Návrh vznikne až keď má jedna peňaženka 30 čistých obchodov.' },
   { id: 'skeptic', name: 'Skeptik', detail: 'Zamietne vzorku pod 30, nejasný smer a udalosť staršiu ako 60 sekúnd.' },
   { id: 'ceo', name: 'CEO', detail: 'Návrh posunie ďalej. Limity nezmení a veto neprepíše.' },
-  { id: 'risk', name: 'Risk governor', detail: 'Pustí príkaz len na pripojenú verejnú adresu, do 3 pozícií a 10 príkazov za deň. Stop je 15 % pod vstupom.' },
+  { id: 'risk', name: 'Risk governor', detail: 'Pustí paper príkaz za 50 USD len na pripojenú verejnú adresu, do 3 pozícií a 10 príkazov za deň. Stop je 15 % pod vstupom. Live odoslanie nie je zapnuté.' },
   { id: 'executor', name: 'Executor', detail: 'Zapíše paper príkaz na našu verejnú adresu. Na sieť nič neposiela.' },
   { id: 'notifier', name: 'Hlásenie', detail: 'Samostatný riadok na tejto ploche. Telefón sa zapojí až po zvolení kanála.' },
   { id: 'wallet', name: 'Phantom', detail: 'Ostáva odpojená. Live podpis nie je v tomto behu.' },
@@ -379,12 +379,17 @@ function bookOf(file) {
       source: shortId(order.source),
       mint: shortId(order.mint),
     })),
-    ladder: traderLadder(ledger).map((row) => ({
+    ladder: traderLadder(ledger, Math.floor(Date.now() / 1000)).map((row) => ({
       address: shortId(row.address),
       classified: row.classified,
-      need: LIMITS.minTraderSamples,
+      need: row.need,
       side: row.side,
       mint: shortId(row.mint),
+      rank: row.rank,
+      ageSec: row.ageSec,
+      qualified: row.qualified,
+      stakeUsd: row.stakeUsd,
+      reason: row.reason,
     })),
     summary: summarizePaper(ledger),
   };
