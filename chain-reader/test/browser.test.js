@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { createBrowserDesk, paceMs, tabOwnsLoop } = require('../src/browser-session');
+const { createBrowserDesk, paceMs, tabHoldsDesk } = require('../src/browser-session');
 
 const KEY = 'helius-key-aaaa';
 const OUR = 'So11111111111111111111111111111111111111112';
@@ -300,9 +300,22 @@ test('a filling wallet asks for signatures older than its cursor', async () => {
 });
 
 test('a saved key does not keep the tab in front of the local process', () => {
-  assert.equal(tabOwnsLoop({ running: false, wallet: OUR, keys: [true, false, false] }), false);
-  assert.equal(tabOwnsLoop({ running: true, wallet: null, keys: [false, false, false] }), true);
-  assert.equal(tabOwnsLoop(null), false);
+  assert.equal(tabHoldsDesk({ running: false, halted: false, wallet: OUR, keys: [true, false, false] }), false);
+  assert.equal(tabHoldsDesk({ running: true, wallet: null, keys: [false, false, false] }), true);
+  assert.equal(tabHoldsDesk(null), false);
+  assert.equal(tabHoldsDesk({
+    running: false,
+    halted: true,
+    book: { openPositions: 1, ordersTotal: 1, trades: 30 },
+  }), true);
+  assert.equal(tabHoldsDesk({
+    running: false,
+    halted: false,
+    book: { openPositions: 0, ordersTotal: 0, trades: 4 },
+  }), true);
+  const desk = createBrowserDesk({ auto: false });
+  desk.connectRpc({ key1: KEY });
+  assert.equal(tabHoldsDesk(desk.kill()), true);
 });
 
 test('a saved key and address return in the next desk and stay out of the snapshot', () => {

@@ -382,7 +382,7 @@
     }
 
     function browserHoldsWork() {
-      return Boolean(browser && globalThis.EliteEngine && EliteEngine.tabOwnsLoop(browser.snapshot()));
+      return Boolean(browser && globalThis.EliteEngine && EliteEngine.tabHoldsDesk(browser.snapshot()));
     }
 
     function paint(data) {

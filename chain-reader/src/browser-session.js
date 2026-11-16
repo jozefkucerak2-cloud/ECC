@@ -345,8 +345,15 @@ function createBrowserDesk(options = {}) {
   return { snapshot, connectRpc, connectWallet, tick, start, halt, kill, release, handle };
 }
 
-function tabOwnsLoop(snapshot) {
-  return Boolean(snapshot && snapshot.running);
+function tabHoldsDesk(snapshot) {
+  if (!snapshot) {
+    return false;
+  }
+  if (snapshot.running || snapshot.halted) {
+    return true;
+  }
+  const book = snapshot.book || {};
+  return (book.openPositions || 0) + (book.ordersTotal || 0) + (book.trades || 0) > 0;
 }
 
 function paceMs(keyCount) {
@@ -495,5 +502,5 @@ function fail(message, statusCode) {
 module.exports = {
   createBrowserDesk,
   paceMs,
-  tabOwnsLoop,
+  tabHoldsDesk,
 };
