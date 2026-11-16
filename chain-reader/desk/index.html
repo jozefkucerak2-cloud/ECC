@@ -164,8 +164,8 @@
     .count { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 500; font-size: 13px; }
     .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
     .metrics.wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    #pnl.up, #sum-profit.up { color: var(--moss); }
-    #pnl.down, #sum-loss.down { color: var(--clay); }
+    #pnl.up, #sum-profit.up, #balance.up { color: var(--moss); }
+    #pnl.down, #sum-loss.down, #balance.down { color: var(--clay); }
     .metric { padding: 12px; border-radius: 14px; background: var(--panel-2); }
     .metric small { display: block; color: var(--faint); font-size: 12px; }
     .metric b { display: block; margin-top: 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
@@ -232,6 +232,41 @@
           <button id="release" type="button">Uvoľniť kill</button>
         </div>
       </section>
+      <section class="card" id="dashboard">
+        <div class="block-head"><p>Dashboard</p><p class="count" id="dash-wallet">Paper 50 USD</p></div>
+        <div class="metrics wide">
+          <div class="metric"><small>Zostatok</small><b id="balance">50,00 USD</b></div>
+          <div class="metric"><small>Voľné</small><b id="free">50,00 USD</b></div>
+          <div class="metric"><small>Zisk</small><b id="sum-profit">0,00 USD</b></div>
+          <div class="metric"><small>Strata</small><b id="sum-loss">0,00 USD</b></div>
+        </div>
+        <div class="metrics wide">
+          <div class="metric"><small>V pozíciách</small><b id="locked">0,00 USD</b></div>
+          <div class="metric"><small>Čistý</small><b id="pnl">0,00 USD</b></div>
+          <div class="metric"><small>Otvorené</small><b id="sum-open">0</b></div>
+          <div class="metric"><small>Zatvorené</small><b id="sum-closed">0</b></div>
+        </div>
+        <p class="fine" id="review-verdict">Ďalší vyhodnotí prvý čistý obchod.</p>
+        <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
+        <p class="fine" id="live-gate">Live odoslanie nie je zapnuté. Kniha ostáva paper a jeden príkaz je 50 USD.</p>
+      </section>
+      <section class="board">
+        <article class="card" id="card-run">
+          <div class="block-head"><p>Koho sledujeme</p><p class="count" id="ladder-count">0 / 30</p></div>
+          <p class="empty" id="ladder-empty">Zatiaľ nikoho. Rebríček sa skladá z načítanej reťaze a ďalší ho vyhodnotí pri 30 čistých obchodoch.</p>
+          <ul class="rows" id="ladder"></ul>
+        </article>
+        <article class="card">
+          <div class="block-head"><p>Otvorené pozície</p><p class="count" id="open-count">0</p></div>
+          <p class="empty" id="open-empty">Žiadna otvorená pozícia.</p>
+          <ul class="rows" id="positions"></ul>
+        </article>
+        <article class="card">
+          <div class="block-head"><p>Zatvorené pozície</p><p class="count" id="trade-count">0</p></div>
+          <p class="empty" id="rounds-empty">Zatiaľ žiadna zatvorená pozícia.</p>
+          <ul class="rows" id="rounds"></ul>
+        </article>
+      </section>
       <ul class="gates" id="gates">
         <li><span>01 · Kde beží</span><b id="gate-local">kontrolujem</b></li>
         <li><span>02 · Helius</span><b id="gate-rpc">kontrolujem</b></li>
@@ -291,27 +326,7 @@
           </form>
         </article>
       </section>
-      <section class="card" id="card-summary">
-        <div class="block-head"><p>Paper 50 USD</p><p class="count" id="pnl-count">0 ziskov · 0 strát · 0 otvorených</p></div>
-        <div class="metrics wide">
-          <div class="metric"><small>Čistý</small><b id="pnl">0,00 USD</b></div>
-          <div class="metric"><small>Zisk</small><b id="sum-profit">0,00 USD</b></div>
-          <div class="metric"><small>Strata</small><b id="sum-loss">0,00 USD</b></div>
-          <div class="metric"><small>Otvorené</small><b id="sum-open">0</b></div>
-        </div>
-        <p class="fine" id="review-verdict">Ďalší vyhodnotí prvý čistý obchod.</p>
-        <div class="block-head" style="margin-top:18px"><p>Transakcie</p><p class="count" id="trade-count">0</p></div>
-        <p class="empty" id="rounds-empty">Zatiaľ žiadna transakcia. Prvá vznikne po 30 čistých obchodoch sledovanej peňaženky.</p>
-        <ul class="rows" id="rounds"></ul>
-        <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
-        <p class="fine" id="live-gate">Live odoslanie nie je zapnuté. Kniha ostáva paper a jeden príkaz je 50 USD.</p>
-      </section>
       <section class="board">
-        <article class="card" id="card-run">
-          <div class="block-head"><p>Koho sledujeme</p><p class="count" id="ladder-count">0 / 30</p></div>
-          <p class="empty" id="ladder-empty">Zatiaľ nikoho. Rebríček sa skladá z načítanej reťaze a ďalší ho vyhodnotí pri 30 čistých obchodoch.</p>
-          <ul class="rows" id="ladder"></ul>
-        </article>
         <article class="card">
           <div class="block-head"><p>Kniha</p><p class="count" id="book-count">0 pozícií</p></div>
           <div class="metrics">
@@ -321,7 +336,6 @@
             <div class="metric"><small>Dnes</small><b id="lim-day">0 / 10</b></div>
           </div>
           <p class="empty" id="book-empty">Žiadna paper pozícia.</p>
-          <ul class="rows" id="positions"></ul>
           <ul class="rows" id="orders"></ul>
           <div class="block-head" style="margin-top:18px"><p>Posledné kolo</p></div>
           <div class="metrics">
@@ -377,6 +391,11 @@
       const number = Number.isFinite(value) ? value : 0;
       const sign = number > 0 ? '+' : '';
       return sign + number.toLocaleString('sk-SK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' USD';
+    }
+
+    function formatMoney(value) {
+      const number = Number.isFinite(value) ? value : 0;
+      return number.toLocaleString('sk-SK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' USD';
     }
 
     function formatPrice(value) {
@@ -501,10 +520,17 @@
       const orders = document.getElementById('orders');
       positions.replaceChildren();
       orders.replaceChildren();
-      (book.positions || []).forEach((position) => {
+      const openRows = book.positions || [];
+      text('open-count', String(openRows.length));
+      document.getElementById('open-empty').hidden = openRows.length > 0;
+      openRows.forEach((position) => {
         const row = document.createElement('li');
-        const stop = position.stop == null ? 'bez stopu' : 'stop ' + position.stop;
-        row.textContent = (position.account || position.wallet) + ' · ' + (position.source || 'zdroj') + ' · ' + position.mint + ' · ' + stop;
+        const name = document.createElement('strong');
+        name.textContent = shortText(position.mint) + ' · ' + formatMoney(position.stakeUsd == null ? 50 : position.stakeUsd);
+        const meta = document.createElement('span');
+        const stop = position.stop == null ? 'bez stopu' : 'stop ' + formatPrice(position.stop);
+        meta.textContent = 'otvorená · od ' + (position.source || '—') + ' · ' + stop;
+        row.append(name, meta);
         positions.append(row);
       });
       (book.recentOrders || []).forEach((order) => {
@@ -553,6 +579,16 @@
       const netUsd = Number.isFinite(review.netUsd) ? review.netUsd : (Number.isFinite(summary.realizedUsd) ? summary.realizedUsd : 0);
       const profitUsd = Number.isFinite(review.profitUsd) ? review.profitUsd : 0;
       const lossUsd = Number.isFinite(review.lossUsd) ? review.lossUsd : 0;
+      const equityUsd = Number.isFinite(review.equityUsd) ? review.equityUsd : 50 + netUsd;
+      const freeUsd = Number.isFinite(review.freeUsd) ? review.freeUsd : equityUsd;
+      const lockedUsd = Number.isFinite(review.lockedUsd) ? review.lockedUsd : 0;
+      const balance = document.getElementById('balance');
+      balance.textContent = formatMoney(equityUsd);
+      balance.classList.toggle('up', equityUsd > 50);
+      balance.classList.toggle('down', equityUsd < 50);
+      text('free', formatMoney(freeUsd));
+      text('locked', formatMoney(lockedUsd));
+      text('dash-wallet', data.wallet ? 'Paper 50 USD · ' + shortText(data.wallet) : 'Paper 50 USD');
       const pnl = document.getElementById('pnl');
       pnl.textContent = formatUsd(netUsd);
       pnl.classList.toggle('up', netUsd > 0);
@@ -564,10 +600,11 @@
       profit.classList.toggle('up', profitUsd > 0);
       loss.classList.toggle('down', lossUsd < 0);
       text('sum-open', String(summary.open || review.open || 0));
-      text('pnl-count', (summary.wins || review.wins || 0) + ' ziskov · ' + (summary.losses || review.losses || 0) + ' strát · ' + (summary.open || review.open || 0) + ' otvorených');
+      text('sum-closed', String(summary.closed || 0));
       text('review-verdict', review.verdict || 'Ďalší vyhodnotí prvý čistý obchod.');
       const rounds = document.getElementById('rounds');
-      const roundRows = Array.isArray(review.trades) ? review.trades : (Array.isArray(summary.rounds) ? summary.rounds : []);
+      const roundRows = (Array.isArray(review.trades) ? review.trades : (Array.isArray(summary.rounds) ? summary.rounds : []))
+        .filter((round) => round.state !== 'otvorený');
       text('trade-count', String(roundRows.length));
       rounds.replaceChildren();
       document.getElementById('rounds-empty').hidden = roundRows.length > 0;

@@ -132,6 +132,9 @@ test('profit and loss count every closed trade, including those older than the l
   assert.equal(review.profitUsd, 60);
   assert.equal(review.lossUsd, -7.5);
   assert.equal(review.netUsd, 52.5);
+  assert.equal(review.equityUsd, 102.5);
+  assert.equal(review.lockedUsd, 0);
+  assert.equal(review.freeUsd, 102.5);
   assert.match(review.verdict, /Zisk 60 USD, strata 7\.5 USD, čistý 52\.5 USD/);
 });
 
@@ -151,6 +154,10 @@ test('thirty fresh buys become one paper order and a repeat is ignored', () => {
   assert.equal(first.ledger.positions[0].stopPrice, 0.85);
   assert.equal(first.ledger.orders[0].stakeUsd, 50);
   assert.equal(first.ledger.positions[0].stakeUsd, 50);
+  const booked = evaluateBook(first.ledger, NOW);
+  assert.equal(booked.equityUsd, 50);
+  assert.equal(booked.lockedUsd, 50);
+  assert.equal(booked.freeUsd, 0);
   assert.equal(first.ledger.positions.length, 1);
   assert.match(first.decision, /paper buy/);
   assert.notEqual(

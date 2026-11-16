@@ -372,6 +372,7 @@ function bookOf(file) {
       source: shortId(position.source),
       mint: shortId(position.mint),
       units: position.units,
+      stakeUsd: position.stakeUsd == null ? LIMITS.paperUsd : position.stakeUsd,
       stop: position.stopPrice == null ? null : position.stopPrice,
     })),
     recentOrders: ledger.orders.slice(-5).map((order) => ({
@@ -407,6 +408,10 @@ function publicReview(review) {
     wins: review.wins,
     losses: review.losses,
     open: review.open,
+    bankUsd: review.bankUsd,
+    equityUsd: review.equityUsd,
+    lockedUsd: review.lockedUsd,
+    freeUsd: review.freeUsd,
     watching: review.watching.map((row) => ({
       rank: row.rank,
       address: shortId(row.address),

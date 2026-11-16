@@ -53,8 +53,11 @@ test('start without keys is refused and the page is served', async () => {
     assert.match(html, /tabHoldsDesk/);
     assert.match(html, /secretsForProcess/);
     assert.match(html, /Paper 50 USD/);
+    assert.match(html, /Zostatok/);
+    assert.match(html, /Otvorené pozície/);
+    assert.match(html, /Zatvorené pozície/);
     assert.match(html, /Koho sledujeme/);
-    assert.match(html, /Transakcie/);
+    assert.match(html, /Zatvorené pozície/);
     assert.match(html, /Vyhodnotenie/);
     assert.match(html, /node chain-reader\/src\/serve\.js/);
     assert.match(html, /127\.0\.0\.1:8787/);

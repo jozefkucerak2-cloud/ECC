@@ -1058,12 +1058,19 @@ var EliteEngine = (() => {
         }));
         const profitUsd = summary.profitUsd;
         const lossUsd = summary.lossUsd;
+        const lockedUsd = money(ledger.positions.reduce((sum, position) => sum + stakeOf(position, null), 0));
+        const equityUsd = money(LIMITS.paperUsd + summary.realizedUsd);
+        const freeUsd = money(equityUsd - lockedUsd);
         return {
           watching,
           trades,
           profitUsd,
           lossUsd,
           netUsd: summary.realizedUsd,
+          bankUsd: LIMITS.paperUsd,
+          equityUsd,
+          lockedUsd,
+          freeUsd,
           wins: summary.wins,
           losses: summary.losses,
           open: summary.open,
@@ -1595,6 +1602,7 @@ var EliteEngine = (() => {
             source: shortId(position.source),
             mint: shortId(position.mint),
             units: position.units,
+            stakeUsd: position.stakeUsd == null ? LIMITS.paperUsd : position.stakeUsd,
             stop: position.stopPrice == null ? null : position.stopPrice
           })),
           recentOrders: ledger.orders.slice(-5).map((order) => ({
@@ -1629,6 +1637,10 @@ var EliteEngine = (() => {
           wins: review.wins,
           losses: review.losses,
           open: review.open,
+          bankUsd: review.bankUsd,
+          equityUsd: review.equityUsd,
+          lockedUsd: review.lockedUsd,
+          freeUsd: review.freeUsd,
           watching: review.watching.map((row) => ({
             rank: row.rank,
             address: shortId(row.address),

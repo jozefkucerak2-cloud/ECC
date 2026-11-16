@@ -641,12 +641,19 @@ function evaluateBook(raw, nowSeconds) {
   }));
   const profitUsd = summary.profitUsd;
   const lossUsd = summary.lossUsd;
+  const lockedUsd = money(ledger.positions.reduce((sum, position) => sum + stakeOf(position, null), 0));
+  const equityUsd = money(LIMITS.paperUsd + summary.realizedUsd);
+  const freeUsd = money(equityUsd - lockedUsd);
   return {
     watching,
     trades,
     profitUsd,
     lossUsd,
     netUsd: summary.realizedUsd,
+    bankUsd: LIMITS.paperUsd,
+    equityUsd,
+    lockedUsd,
+    freeUsd,
     wins: summary.wins,
     losses: summary.losses,
     open: summary.open,
