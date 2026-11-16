@@ -382,9 +382,7 @@
     }
 
     function browserHoldsWork() {
-      if (!browser) return false;
-      const snap = browser.snapshot();
-      return Boolean(snap.running || snap.wallet || (snap.keys || []).some(Boolean));
+      return Boolean(browser && globalThis.EliteEngine && EliteEngine.tabOwnsLoop(browser.snapshot()));
     }
 
     function paint(data) {
@@ -541,16 +539,21 @@
       return data;
     }
 
+    async function handToProcess() {
+      const data = await readStatus();
+      serverKnown = true;
+      if (browserHoldsWork()) return false;
+      if (browser) {
+        browser.halt();
+        browser = null;
+      }
+      paint(data);
+      return true;
+    }
+
     async function refresh() {
       try {
-        const data = await readStatus();
-        serverKnown = true;
-        if (browserHoldsWork()) return;
-        if (browser) {
-          browser.halt();
-          browser = null;
-        }
-        paint(data);
+        await handToProcess();
       } catch {
         serverKnown = false;
         if (!browser && !armBrowser()) missingEngine();
@@ -564,6 +567,13 @@
 
     async function postJson(path, body) {
       await ready();
+      if (browser && !browserHoldsWork()) {
+        try {
+          await handToProcess();
+        } catch {
+          serverKnown = false;
+        }
+      }
       if (browser) {
         const payload = await browser.handle(path, body || {});
         localNote = '';

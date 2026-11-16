@@ -50,6 +50,7 @@ test('start without keys is refused and the page is served', async () => {
     const html = await page.text();
     assert.equal(page.status, 200);
     assert.match(html, /Spustiť paper/);
+    assert.match(html, /tabOwnsLoop/);
     assert.match(html, /node chain-reader\/src\/serve\.js/);
     assert.match(html, /127\.0\.0\.1:8787/);
     const engine = await fetch(`http://127.0.0.1:${port}/engine.js`);

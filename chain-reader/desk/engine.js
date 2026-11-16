@@ -1260,6 +1260,9 @@ var EliteEngine = (() => {
         }
         return { snapshot, connectRpc, connectWallet, tick, start, halt, kill, release, handle };
       }
+      function tabOwnsLoop(snapshot) {
+        return Boolean(snapshot && snapshot.running);
+      }
       function paceMs(keyCount) {
         const perKey = Math.ceil(POLL_CREDITS * MONTH_MS / USABLE_CREDITS);
         return Math.ceil(perKey / Math.max(1, keyCount));
@@ -1393,7 +1396,8 @@ var EliteEngine = (() => {
       }
       module.exports = {
         createBrowserDesk,
-        paceMs
+        paceMs,
+        tabOwnsLoop
       };
     }
   });

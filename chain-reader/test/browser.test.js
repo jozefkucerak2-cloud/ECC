@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { createBrowserDesk, paceMs } = require('../src/browser-session');
+const { createBrowserDesk, paceMs, tabOwnsLoop } = require('../src/browser-session');
 
 const KEY = 'helius-key-aaaa';
 const OUR = 'So11111111111111111111111111111111111111112';
@@ -297,6 +297,12 @@ test('a filling wallet asks for signatures older than its cursor', async () => {
   desk.connectWallet({ address: OUR });
   await desk.tick();
   assert.equal(pages[0].before, 'old-sig');
+});
+
+test('a saved key does not keep the tab in front of the local process', () => {
+  assert.equal(tabOwnsLoop({ running: false, wallet: OUR, keys: [true, false, false] }), false);
+  assert.equal(tabOwnsLoop({ running: true, wallet: null, keys: [false, false, false] }), true);
+  assert.equal(tabOwnsLoop(null), false);
 });
 
 test('a saved key and address return in the next desk and stay out of the snapshot', () => {
