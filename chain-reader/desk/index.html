@@ -42,104 +42,120 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      min-height: 64px;
-      padding: 12px 28px;
+      min-height: 58px;
+      padding: 0 32px;
       border-bottom: 1px solid var(--line);
     }
     .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.03em; }
-    .mark { width: 10px; height: 10px; border-radius: 3px; background: var(--cream); }
+    .mark { width: 8px; height: 8px; border-radius: 2px; background: var(--cream); }
     .mode {
-      padding: 4px 8px;
+      padding: 3px 8px;
       border-radius: 999px;
       background: var(--cream);
       color: var(--cream-ink);
       font-size: 11px;
       font-weight: 700;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
     }
     .mode.kill { background: var(--clay); }
     .chip {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: var(--panel);
       color: var(--muted);
       font-size: 12px;
     }
     .chip b { color: var(--ink); font-weight: 600; }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
     .chip.on .dot { background: var(--moss); }
-    .clock { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
-    main { padding: 22px 28px 48px; display: flex; flex-direction: column; gap: 16px; }
-    .now {
+    .clock { margin-left: auto; color: var(--faint); font-variant-numeric: tabular-nums; }
+    main {
+      width: min(1120px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 36px 0 72px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+    .hero {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 18px;
+      gap: 24px;
       align-items: end;
-      padding: 22px 24px;
-      border-radius: 22px;
-      background: var(--cream);
-      color: var(--cream-ink);
     }
     .eyebrow {
-      margin: 0 0 8px;
+      margin: 0 0 10px;
+      color: var(--faint);
       font-size: 11px;
       font-weight: 700;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
     }
-    #status {
-      margin: 0;
-      max-width: 760px;
+    #balance {
+      display: block;
+      color: var(--cream);
       font-family: Newsreader, Georgia, serif;
-      font-size: 32px;
-      font-weight: 560;
-      line-height: 1.15;
-      letter-spacing: -0.03em;
+      font-size: 76px;
+      font-weight: 500;
+      letter-spacing: -0.045em;
+      line-height: 0.9;
     }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    #status {
+      margin: 16px 0 0;
+      max-width: 46ch;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.45;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding-bottom: 6px; }
     button {
-      height: 40px;
+      height: 38px;
       padding: 0 14px;
       border-radius: 999px;
-      border: 1px solid rgba(26, 23, 18, 0.18);
+      border: 1px solid var(--line);
       background: transparent;
+      color: var(--ink);
     }
-    .now button { color: var(--cream-ink); }
-    button.solid { background: var(--cream-ink); color: var(--cream); border-color: var(--cream-ink); font-weight: 600; }
-    button.hot { color: #6d2418; border-color: rgba(109, 36, 24, 0.45); }
-    .gates { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-    .gates li {
-      min-height: 78px;
-      padding: 14px 16px;
-      border-radius: var(--radius);
-      background: var(--panel);
-      border: 1px solid transparent;
+    button.solid { background: var(--cream); color: var(--cream-ink); border-color: var(--cream); font-weight: 600; }
+    button.hot { color: var(--clay); border-color: rgba(227, 154, 132, 0.45); }
+    .statline {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
     }
-    .gates li span { display: block; color: var(--faint); font-size: 12px; }
-    .gates li b { display: block; margin-top: 6px; font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
-    .setup { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 12px; }
+    .metric { padding: 16px 18px 16px 0; }
+    .metric + .metric { padding-left: 18px; border-left: 1px solid var(--line); }
+    .metric small { display: block; color: var(--faint); font-size: 12px; }
+    .metric b, .metric .sub b, #locked, #sum-open, #sum-closed {
+      font-weight: 560;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric b {
+      display: block;
+      margin-top: 6px;
+      font-family: Newsreader, Georgia, serif;
+      font-size: 28px;
+      letter-spacing: -0.03em;
+    }
+    .sub { display: block; margin-top: 6px; color: var(--faint); font-size: 12px; }
+    #pnl.up, #sum-profit.up, #balance.up, .rows strong.up { color: var(--moss); }
+    #pnl.down, #sum-loss.down, #balance.down, .rows strong.down { color: var(--clay); }
+    .stage { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr); gap: 22px; align-items: start; }
+    .stack-cards { display: flex; flex-direction: column; gap: 22px; }
     .card {
-      padding: 18px 18px 16px;
-      border-radius: 20px;
-      background: var(--panel);
+      padding: 18px 20px 8px;
+      border-radius: 18px;
+      background: transparent;
       border: 1px solid var(--line);
     }
-    .card.current { border-color: rgba(243, 234, 215, 0.72); }
-    .card.live { border-color: rgba(198, 221, 154, 0.7); }
-    .card-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 12px; }
-    .step {
-      margin: 0;
-      color: var(--faint);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-    }
-    h2 { margin: 4px 0 0; font-size: 18px; letter-spacing: -0.03em; }
-    form { display: flex; flex-direction: column; gap: 8px; margin: 0; }
-    .host, .fine { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .card.current { border-color: rgba(243, 234, 215, 0.55); }
+    .card.live { border-color: rgba(198, 221, 154, 0.55); }
+    .card-head, .block-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .step { margin: 0; color: var(--faint); font-size: 12px; font-weight: 700; letter-spacing: 0.12em; }
+    h2 { margin: 4px 0 12px; font-family: Newsreader, Georgia, serif; font-size: 28px; font-weight: 500; letter-spacing: -0.03em; }
+    form { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
+    .host, .fine { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
     label { display: flex; justify-content: space-between; gap: 8px; color: var(--faint); font-size: 12px; font-weight: 600; }
     label em { font-style: normal; color: var(--muted); font-weight: 500; }
     input {
@@ -153,32 +169,31 @@
     }
     input:focus { border-color: rgba(243, 234, 215, 0.55); }
     .row { display: flex; flex-wrap: wrap; gap: 8px; }
-    .card button { color: var(--ink); border-color: var(--line); }
     .card button.solid { background: var(--cream); color: var(--cream-ink); border-color: var(--cream); }
     details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     details .stack { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
     code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
-    .board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr) minmax(280px, 0.9fr); gap: 12px; }
-    .block-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-    .block-head p { margin: 0; color: var(--faint); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-    .count { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 500; font-size: 13px; }
-    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
-    .metrics.wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    #pnl.up, #sum-profit.up, #balance.up { color: var(--moss); }
-    #pnl.down, #sum-loss.down, #balance.down { color: var(--clay); }
-    .metric { padding: 12px; border-radius: 14px; background: var(--panel-2); }
-    .metric small { display: block; color: var(--faint); font-size: 12px; }
-    .metric b { display: block; margin-top: 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
-    .rows, .roles { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .gates { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 22px; }
+    .gates li { color: var(--faint); font-size: 13px; }
+    .gates li span { margin-right: 6px; }
+    .gates li b { color: var(--ink); font-weight: 600; }
+    .setup { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 22px; }
+    .lower { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 22px; }
+    .facts { display: grid; grid-template-columns: 1fr 1fr; margin-top: 8px; }
+    .facts .metric { padding: 10px 12px 10px 0; border: 0; }
+    .facts .metric + .metric { border: 0; padding-left: 0; }
+    .facts .metric b { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 16px; }
+    .block-head p { margin: 0; color: var(--faint); font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+    .count { color: var(--muted); font-weight: 500; font-size: 13px; letter-spacing: 0; text-transform: none; }
+    .rows, .roles { list-style: none; margin: 8px 0 0; padding: 0; }
     .rows li, .roles li {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 2px 12px;
-      padding: 12px 14px;
-      border-radius: 14px;
-      background: var(--panel-2);
+      gap: 2px 16px;
+      padding: 14px 0;
+      border-top: 1px solid var(--line);
     }
-    .rows li span, .detail { color: var(--muted); }
+    .rows li span, .detail { color: var(--muted); font-size: 13px; }
     .detail { grid-column: 1 / -1; }
     .tag {
       justify-self: end;
@@ -189,21 +204,18 @@
       color: var(--faint);
     }
     .tag.live { color: var(--moss-ink); background: var(--moss); padding: 3px 7px; border-radius: 999px; }
-    .empty { margin: 10px 0 0; color: var(--muted); }
-    .lane { grid-column: 1 / -1; height: 4px; margin-top: 8px; border-radius: 999px; background: rgba(246, 241, 231, 0.08); overflow: hidden; }
+    .empty { margin: 8px 0 12px; color: var(--muted); }
+    .lane { grid-column: 1 / -1; height: 3px; margin-top: 10px; border-radius: 999px; background: rgba(246, 241, 231, 0.08); overflow: hidden; }
     .lane span { display: block; height: 100%; background: var(--cream); }
     #program { overflow-wrap: anywhere; }
-    @media (max-width: 1100px) {
-      .setup, .board, .gates { grid-template-columns: 1fr 1fr; }
-      .now { grid-template-columns: 1fr; }
+    @media (max-width: 900px) {
+      header { padding: 12px 16px; flex-wrap: wrap; }
+      main { width: min(1120px, calc(100% - 32px)); }
+      .hero, .stage, .setup, .lower, .statline { grid-template-columns: 1fr; }
+      .metric + .metric { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
       .actions { justify-content: flex-start; }
-    }
-    @media (max-width: 720px) {
-      header, main { padding-left: 16px; padding-right: 16px; }
-      header { flex-wrap: wrap; }
+      #balance { font-size: 56px; }
       .clock { margin-left: 0; }
-      .setup, .board, .gates, .metrics, .metrics.wide { grid-template-columns: 1fr; }
-      #status { font-size: 26px; }
     }
     @media (prefers-reduced-motion: reduce) {
       * { scroll-behavior: auto; transition: none; }
@@ -220,10 +232,13 @@
       <div class="clock" id="clock"></div>
     </header>
     <main>
-      <section class="now">
+      <section class="hero" id="dashboard">
         <div>
-          <p class="eyebrow">Teraz</p>
+          <p class="eyebrow">Zostatok</p>
+          <b id="balance">50,00 USD</b>
+          <p class="fine" id="dash-wallet">Paper 50 USD</p>
           <p id="status" aria-live="polite">Kontrolujem, či beží lokálny proces.</p>
+          <p class="fine" id="review-verdict">Ďalší vyhodnotí prvý čistý obchod.</p>
         </div>
         <div class="actions">
           <button class="solid" id="start" type="button">Spustiť paper</button>
@@ -232,41 +247,34 @@
           <button id="release" type="button">Uvoľniť kill</button>
         </div>
       </section>
-      <section class="card" id="dashboard">
-        <div class="block-head"><p>Dashboard</p><p class="count" id="dash-wallet">Paper 50 USD</p></div>
-        <div class="metrics wide">
-          <div class="metric"><small>Zostatok</small><b id="balance">50,00 USD</b></div>
-          <div class="metric"><small>Voľné</small><b id="free">50,00 USD</b></div>
-          <div class="metric"><small>Zisk</small><b id="sum-profit">0,00 USD</b></div>
-          <div class="metric"><small>Strata</small><b id="sum-loss">0,00 USD</b></div>
-        </div>
-        <div class="metrics wide">
-          <div class="metric"><small>V pozíciách</small><b id="locked">0,00 USD</b></div>
-          <div class="metric"><small>Čistý</small><b id="pnl">0,00 USD</b></div>
-          <div class="metric"><small>Otvorené</small><b id="sum-open">0</b></div>
-          <div class="metric"><small>Zatvorené</small><b id="sum-closed">0</b></div>
-        </div>
-        <p class="fine" id="review-verdict">Ďalší vyhodnotí prvý čistý obchod.</p>
-        <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
-        <p class="fine" id="live-gate">Live odoslanie nie je zapnuté. Kniha ostáva paper a jeden príkaz je 50 USD.</p>
+      <section class="statline" aria-label="Paper súhrn">
+        <div class="metric"><small>Voľné</small><b id="free">50,00 USD</b><small class="sub">V pozíciách <span id="locked">0,00 USD</span></small></div>
+        <div class="metric"><small>Zisk</small><b id="sum-profit">0,00 USD</b></div>
+        <div class="metric"><small>Strata</small><b id="sum-loss">0,00 USD</b></div>
+        <div class="metric"><small>Čistý</small><b id="pnl">0,00 USD</b><small class="sub"><span id="sum-open">0</span> otvorených · <span id="sum-closed">0</span> zatvorených</small></div>
       </section>
-      <section class="board">
+      <section class="stage">
         <article class="card" id="card-run">
           <div class="block-head"><p>Koho sledujeme</p><p class="count" id="ladder-count">0 / 30</p></div>
-          <p class="empty" id="ladder-empty">Zatiaľ nikoho. Rebríček sa skladá z načítanej reťaze a ďalší ho vyhodnotí pri 30 čistých obchodoch.</p>
+          <p class="empty" id="ladder-empty">Zatiaľ nikoho. Rebríček vznikne z prvého čistého obchodu.</p>
           <ul class="rows" id="ladder"></ul>
         </article>
-        <article class="card">
-          <div class="block-head"><p>Otvorené pozície</p><p class="count" id="open-count">0</p></div>
-          <p class="empty" id="open-empty">Žiadna otvorená pozícia.</p>
-          <ul class="rows" id="positions"></ul>
-        </article>
-        <article class="card">
-          <div class="block-head"><p>Zatvorené pozície</p><p class="count" id="trade-count">0</p></div>
-          <p class="empty" id="rounds-empty">Zatiaľ žiadna zatvorená pozícia.</p>
-          <ul class="rows" id="rounds"></ul>
-        </article>
+        <div class="stack-cards">
+          <article class="card">
+            <div class="block-head"><p>Otvorené pozície</p><p class="count" id="open-count">0</p></div>
+            <p class="empty" id="open-empty">Žiadna otvorená pozícia.</p>
+            <ul class="rows" id="positions"></ul>
+          </article>
+          <article class="card">
+            <div class="block-head"><p>Zatvorené pozície</p><p class="count" id="trade-count">0</p></div>
+            <p class="empty" id="rounds-empty">Zatiaľ žiadna zatvorená pozícia.</p>
+            <p class="fine" id="closed-note" hidden>Na ploche je len posledných dvanásť.</p>
+            <ul class="rows" id="rounds"></ul>
+          </article>
+        </div>
       </section>
+      <p class="fine" id="notice">Bez nového paper zápisu. Telefón nie je zapojený.</p>
+      <p class="fine" id="live-gate">Live odoslanie nie je zapnuté. Jeden príkaz je 50 USD a ďalší čaká, kým sa voľné peniaze uvoľnia.</p>
       <ul class="gates" id="gates">
         <li><span>01 · Kde beží</span><b id="gate-local">kontrolujem</b></li>
         <li><span>02 · Helius</span><b id="gate-rpc">kontrolujem</b></li>
@@ -326,10 +334,10 @@
           </form>
         </article>
       </section>
-      <section class="board">
+      <section class="lower">
         <article class="card">
           <div class="block-head"><p>Kniha</p><p class="count" id="book-count">0 pozícií</p></div>
-          <div class="metrics">
+          <div class="facts">
             <div class="metric"><small>Vzorka</small><b id="lim-sample">30</b></div>
             <div class="metric"><small>Sviežosť</small><b id="lim-age">60 s</b></div>
             <div class="metric"><small>Pozície</small><b id="lim-pos">0 / 3</b></div>
@@ -338,7 +346,7 @@
           <p class="empty" id="book-empty">Žiadna paper pozícia.</p>
           <ul class="rows" id="orders"></ul>
           <div class="block-head" style="margin-top:18px"><p>Posledné kolo</p></div>
-          <div class="metrics">
+          <div class="facts">
             <div class="metric"><small>Vzorka</small><b id="sample">čaká</b></div>
             <div class="metric"><small>Peňaženky</small><b id="wallets">0</b></div>
             <div class="metric"><small>Podpisy</small><b id="fetched">0</b></div>
@@ -605,7 +613,9 @@
       const rounds = document.getElementById('rounds');
       const roundRows = (Array.isArray(review.trades) ? review.trades : (Array.isArray(summary.rounds) ? summary.rounds : []))
         .filter((round) => round.state !== 'otvorený');
-      text('trade-count', String(roundRows.length));
+      text('trade-count', String(summary.closed || roundRows.length));
+      const closedNote = document.getElementById('closed-note');
+      if (closedNote) closedNote.hidden = roundRows.length === 0 || roundRows.length >= (summary.closed || 0);
       rounds.replaceChildren();
       document.getElementById('rounds-empty').hidden = roundRows.length > 0;
       roundRows.forEach((round) => {
@@ -613,6 +623,8 @@
         const name = document.createElement('strong');
         const state = round.state || round.side;
         name.textContent = tradeLabel(round.side || state) + ' · ' + shortText(round.mint);
+        if (round.resultUsd > 0) name.className = 'up';
+        if (round.resultUsd < 0) name.className = 'down';
         const meta = document.createElement('span');
         const result = state === 'otvorený'
           ? 'beží · ' + formatUsd(round.stakeUsd == null ? 50 : round.stakeUsd)

@@ -832,6 +832,9 @@ var EliteEngine = (() => {
         if (order.side === "buy" && ledger.positions.length >= LIMITS.maxOpenPositions) {
           return { approved: false, order: null, note: "tri paper poz\xEDcie s\xFA pln\xE9" };
         }
+        if (order.side === "buy" && paperFreeUsd(ledger) < stakeOf(order, null)) {
+          return { approved: false, order: null, note: "vo\u013En\xE9 peniaze nesta\u010Dia na 50 USD" };
+        }
         const today = ordersOnDay(ledger.orders, utcDay(nowSeconds));
         if (today >= LIMITS.maxOrdersPerDay) {
           return { approved: false, order: null, note: "denn\xFD strop 10 paper pr\xEDkazov" };
@@ -990,6 +993,7 @@ var EliteEngine = (() => {
           });
         }
         const scored = rounds.filter((round) => round.state !== "otvoren\xFD" && round.resultBps != null);
+        const closedRows = rounds.filter((round) => round.state !== "otvoren\xFD");
         return {
           realizedBps: scored.reduce((sum, round) => sum + round.resultBps, 0),
           realizedUsd: Math.round(scored.reduce((sum, round) => sum + round.resultUsd, 0) * 100) / 100,
@@ -1000,7 +1004,7 @@ var EliteEngine = (() => {
           wins: scored.filter((round) => round.resultBps > 0).length,
           losses: scored.filter((round) => round.resultBps < 0).length,
           open: Array.isArray(source.positions) ? source.positions.length : 0,
-          rounds: rounds.slice(-12).reverse()
+          rounds: closedRows.slice(-12).reverse()
         };
       }
       function closedRound(entry, order, state, exitPrice) {
@@ -1020,6 +1024,11 @@ var EliteEngine = (() => {
           state,
           at: Number.isInteger(order.recordedAt) ? order.recordedAt : null
         };
+      }
+      function paperFreeUsd(ledger) {
+        const summary = summarizePaper(ledger);
+        const locked = (Array.isArray(ledger.positions) ? ledger.positions : []).reduce((sum, position) => sum + stakeOf(position, null), 0);
+        return money(LIMITS.paperUsd + summary.realizedUsd - locked);
       }
       function stakeOf(entry, order) {
         const stake = finite(entry && entry.stakeUsd) ?? finite(order && order.stakeUsd) ?? LIMITS.paperUsd;

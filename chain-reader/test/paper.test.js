@@ -138,6 +138,26 @@ test('profit and loss count every closed trade, including those older than the l
   assert.match(review.verdict, /Zisk 60 USD, strata 7\.5 USD, čistý 52\.5 USD/);
 });
 
+test('an open position does not push a closed trade off the list', () => {
+  const orders = [];
+  for (let index = 0; index < 12; index += 1) {
+    orders.push(
+      { id: `buy-${index}`, side: 'buy', source: 'WalletA', mint: `Mint${index}`, account: OUR, entryPrice: 1, stakeUsd: 50, recordedAt: index * 2 },
+      { id: `sell-${index}`, side: 'sell', source: 'WalletA', mint: `Mint${index}`, account: OUR, entryPrice: 1.1, stakeUsd: 50, recordedAt: index * 2 + 1 },
+    );
+  }
+  orders.push({ id: 'open', side: 'buy', source: 'WalletA', mint: 'MintOpen', account: OUR, entryPrice: 1, stakeUsd: 50, recordedAt: 100 });
+  const summary = summarizePaper({
+    wallets: {},
+    orders,
+    positions: [{ id: 'open', source: 'WalletA', mint: 'MintOpen', account: OUR, entryPrice: 1, stakeUsd: 50, openedAt: 100 }],
+  });
+  assert.equal(summary.closed, 12);
+  assert.equal(summary.open, 1);
+  assert.equal(summary.rounds.length, 12);
+  assert.equal(summary.rounds.every((round) => round.state !== 'otvorený'), true);
+});
+
 test('fewer than 30 clean trades produces no order', () => {
   const result = runCycle(emptyLedger(), { trades: trades(29, 'buy') }, NOW);
   assert.equal(result.ledger.orders.length, 0);
@@ -158,6 +178,20 @@ test('thirty fresh buys become one paper order and a repeat is ignored', () => {
   assert.equal(booked.equityUsd, 50);
   assert.equal(booked.lockedUsd, 50);
   assert.equal(booked.freeUsd, 0);
+  const again = runCycle(first.ledger, {
+    trades: Array.from({ length: 30 }, (_item, index) => ({
+      signature: `next-${index}`,
+      address: 'Trader0',
+      side: 'buy',
+      mint: 'MintB111111111111111111111111111111111111',
+      blockTime: NOW,
+      solLamports: 1_000_000,
+      tokenRaw: '1000000',
+    })),
+  }, NOW, OUR);
+  assert.equal(again.ledger.positions.length, 1);
+  assert.match(again.decision, /voľné peniaze/);
+  assert.equal(evaluateBook(again.ledger, NOW).freeUsd, 0);
   assert.equal(first.ledger.positions.length, 1);
   assert.match(first.decision, /paper buy/);
   assert.notEqual(

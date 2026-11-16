@@ -398,6 +398,9 @@ function govern(order, ledger, nowSeconds, account) {
   if (order.side === 'buy' && ledger.positions.length >= LIMITS.maxOpenPositions) {
     return { approved: false, order: null, note: 'tri paper pozície sú plné' };
   }
+  if (order.side === 'buy' && paperFreeUsd(ledger) < stakeOf(order, null)) {
+    return { approved: false, order: null, note: 'voľné peniaze nestačia na 50 USD' };
+  }
   const today = ordersOnDay(ledger.orders, utcDay(nowSeconds));
   if (today >= LIMITS.maxOrdersPerDay) {
     return { approved: false, order: null, note: 'denný strop 10 paper príkazov' };
@@ -568,6 +571,7 @@ function summarizePaper(ledger) {
     });
   }
   const scored = rounds.filter((round) => round.state !== 'otvorený' && round.resultBps != null);
+  const closedRows = rounds.filter((round) => round.state !== 'otvorený');
   return {
     realizedBps: scored.reduce((sum, round) => sum + round.resultBps, 0),
     realizedUsd: Math.round(scored.reduce((sum, round) => sum + round.resultUsd, 0) * 100) / 100,
@@ -578,7 +582,7 @@ function summarizePaper(ledger) {
     wins: scored.filter((round) => round.resultBps > 0).length,
     losses: scored.filter((round) => round.resultBps < 0).length,
     open: Array.isArray(source.positions) ? source.positions.length : 0,
-    rounds: rounds.slice(-12).reverse(),
+    rounds: closedRows.slice(-12).reverse(),
   };
 }
 
@@ -599,6 +603,12 @@ function closedRound(entry, order, state, exitPrice) {
     state,
     at: Number.isInteger(order.recordedAt) ? order.recordedAt : null,
   };
+}
+
+function paperFreeUsd(ledger) {
+  const summary = summarizePaper(ledger);
+  const locked = (Array.isArray(ledger.positions) ? ledger.positions : []).reduce((sum, position) => sum + stakeOf(position, null), 0);
+  return money(LIMITS.paperUsd + summary.realizedUsd - locked);
 }
 
 function stakeOf(entry, order) {
