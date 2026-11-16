@@ -109,6 +109,32 @@ test('the next agent evaluates who we watch, the transactions, and the dollar re
   assert.match(review.verdict, /strata 7\.5 USD/);
 });
 
+test('profit and loss count every closed trade, including those older than the last twelve rows', () => {
+  const orders = [
+    { id: 'loss', side: 'buy', source: 'WalletA', mint: 'MintLoss', account: OUR, entryPrice: 1, stakeUsd: 50, recordedAt: 1 },
+    { id: 'stop:loss:s', side: 'stop', source: 'WalletA', mint: 'MintLoss', account: OUR, entryPrice: 1, exitPrice: 0.85, recordedAt: 2 },
+  ];
+  for (let index = 0; index < 12; index += 1) {
+    orders.push(
+      { id: `buy-${index}`, side: 'buy', source: 'WalletA', mint: `Mint${index}`, account: OUR, entryPrice: 1, stakeUsd: 50, recordedAt: 10 + index * 2 },
+      { id: `sell-${index}`, side: 'sell', source: 'WalletA', mint: `Mint${index}`, account: OUR, entryPrice: 1.1, stakeUsd: 50, recordedAt: 11 + index * 2 },
+    );
+  }
+  const ledger = { wallets: {}, orders, positions: [] };
+  const summary = summarizePaper(ledger);
+  const review = evaluateBook(ledger, NOW);
+  assert.equal(summary.rounds.length, 12);
+  assert.equal(summary.closed, 13);
+  assert.equal(summary.realizedUsd, 52.5);
+  assert.equal(summary.profitUsd, 60);
+  assert.equal(summary.lossUsd, -7.5);
+  assert.equal(review.trades.length, 12);
+  assert.equal(review.profitUsd, 60);
+  assert.equal(review.lossUsd, -7.5);
+  assert.equal(review.netUsd, 52.5);
+  assert.match(review.verdict, /Zisk 60 USD, strata 7\.5 USD, čistý 52\.5 USD/);
+});
+
 test('fewer than 30 clean trades produces no order', () => {
   const result = runCycle(emptyLedger(), { trades: trades(29, 'buy') }, NOW);
   assert.equal(result.ledger.orders.length, 0);

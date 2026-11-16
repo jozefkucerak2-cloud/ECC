@@ -571,6 +571,8 @@ function summarizePaper(ledger) {
   return {
     realizedBps: scored.reduce((sum, round) => sum + round.resultBps, 0),
     realizedUsd: Math.round(scored.reduce((sum, round) => sum + round.resultUsd, 0) * 100) / 100,
+    profitUsd: money(scored.reduce((sum, round) => sum + (round.resultUsd > 0 ? round.resultUsd : 0), 0)),
+    lossUsd: money(scored.reduce((sum, round) => sum + (round.resultUsd < 0 ? round.resultUsd : 0), 0)),
     stakeUsd: LIMITS.paperUsd,
     closed: scored.length,
     wins: scored.filter((round) => round.resultBps > 0).length,
@@ -637,8 +639,8 @@ function evaluateBook(raw, nowSeconds) {
     state: round.state,
     verdict: tradeVerdict(round.state, round.resultUsd),
   }));
-  const profitUsd = money(summary.rounds.reduce((sum, round) => sum + (round.resultUsd > 0 ? round.resultUsd : 0), 0));
-  const lossUsd = money(summary.rounds.reduce((sum, round) => sum + (round.resultUsd < 0 ? round.resultUsd : 0), 0));
+  const profitUsd = summary.profitUsd;
+  const lossUsd = summary.lossUsd;
   return {
     watching,
     trades,
